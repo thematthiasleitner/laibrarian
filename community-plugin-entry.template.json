@@ -1,0 +1,7 @@
+{
+  "id": "laibrarian",
+  "name": "laibrarian",
+  "author": "Matthias",
+  "description": "Summarize selected notes or the active note with LLM prompt presets and save generated markdown outputs.",
+  "repo": "thematthiasleitner/laibrarian"
+}
