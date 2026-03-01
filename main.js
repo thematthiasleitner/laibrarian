@@ -29,6 +29,7 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var PROVIDER_IDS = [
   "openai",
+  "anthropic",
   "gemini",
   "google-cloud",
   "azure",
@@ -38,6 +39,7 @@ var PROVIDER_IDS = [
 ];
 var PROVIDER_LABELS = {
   openai: "OpenAI",
+  anthropic: "Anthropic",
   gemini: "Google Gemini",
   "google-cloud": "Google Cloud Vertex AI",
   azure: "Azure OpenAI",
@@ -50,6 +52,11 @@ var PROVIDER_DOCS = {
     label: "OpenAI",
     apiDocsUrl: "https://platform.openai.com/docs/api-reference/chat/create",
     modelDocsUrl: "https://platform.openai.com/docs/models"
+  },
+  anthropic: {
+    label: "Anthropic",
+    apiDocsUrl: "https://docs.anthropic.com/en/api/messages",
+    modelDocsUrl: "https://docs.anthropic.com/en/docs/about-claude/models/overview"
   },
   gemini: {
     label: "Google Gemini",
@@ -83,6 +90,8 @@ var PROVIDER_DOCS = {
   }
 };
 var OPENAI_BASE_URL = "https://api.openai.com/v1";
+var ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
+var ANTHROPIC_API_VERSION = "2023-06-01";
 var GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
 var DATE_FIELD_FILTER_OPTIONS = [
   { id: "created", label: "Date created" },
@@ -94,6 +103,23 @@ var RELATIVE_DATE_UNIT_OPTIONS = [
   { id: "month", label: "Months" },
   { id: "year", label: "Years" }
 ];
+var OUTPUT_FILENAME_BLOCK_OPTIONS = [
+  { id: "date_created", label: "Date of creation", description: "Add the output creation date." },
+  { id: "prompt_choice", label: "Prompt choice", description: "Add the selected prompt identifier." },
+  { id: "time_created", label: "Time of creation", description: "Add the output creation time." },
+  { id: "time_filter", label: "Time filter", description: "Add the active time-filter window, if set." },
+  { id: "search_string", label: "Search string", description: "Add the active search query, if set." }
+];
+var OUTPUT_FILENAME_DEFAULT_ORDER = [
+  "date_created",
+  "prompt_choice",
+  "time_created",
+  "time_filter",
+  "search_string"
+];
+var OUTPUT_FILENAME_BLOCK_ID_SET = new Set(
+  OUTPUT_FILENAME_BLOCK_OPTIONS.map((option) => option.id)
+);
 var DEFAULT_PRESETS = [
   {
     id: "tts_fluid",
@@ -167,13 +193,15 @@ Prioritize depth and relevance over quantity. Do not repeat ideas already covere
 var DEFAULT_SETTINGS = {
   provider: "openai",
   outputFolder: "AI Summaries",
+  outputFilenameElements: createDefaultOutputFilenameElements(),
   defaultPresetId: DEFAULT_PRESETS[0].id,
   temperature: 0.2,
-  maxCharsPerFile: 12e3,
   promptPresets: DEFAULT_PRESETS.map(clonePreset),
   removedDefaultPresetIds: [],
   openaiApiKey: "",
   openaiModel: "gpt-4o-mini",
+  anthropicApiKey: "",
+  anthropicModel: "claude-sonnet-4-0",
   geminiApiKey: "",
   geminiModel: "gemini-2.5-flash",
   googleCloudApiKey: "",
@@ -208,6 +236,22 @@ function clonePreset(preset) {
 function slugify(value) {
   const base = value.toLowerCase().trim().replace(/[^a-z0-9\-\s_]/g, "").replace(/\s+/g, "-").replace(/_+/g, "-").replace(/-+/g, "-");
   return base || "result";
+}
+function createOutputFilenameElement(kind, input = {}) {
+  var _a, _b, _c, _d;
+  return {
+    id: ((_a = input.id) == null ? void 0 : _a.trim()) || `filename-part-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    kind,
+    enabled: (_b = input.enabled) != null ? _b : true,
+    customText: kind === "custom_text" ? (_d = (_c = input.customText) == null ? void 0 : _c.trim()) != null ? _d : "" : void 0
+  };
+}
+function createDefaultOutputFilenameElements() {
+  return OUTPUT_FILENAME_DEFAULT_ORDER.map(
+    (kind) => createOutputFilenameElement(kind, {
+      enabled: kind === "date_created" || kind === "prompt_choice" || kind === "time_created"
+    })
+  );
 }
 var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
   constructor() {
@@ -258,11 +302,14 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     this.settings.promptPresets = mergedPresets;
     this.settings.removedDefaultPresetIds = removedDefaultPresetIds;
     this.settings.defaultPresetId = defaultPresetExists ? requestedDefaultPresetId : mergedPresets[0].id;
+    this.settings.outputFilenameElements = this.normalizeOutputFilenameElements(
+      candidate.outputFilenameElements,
+      candidate.outputFilenameBlocks
+    );
     this.migrateLegacyProviderConnectionSettings(candidate);
     this.normalizeProviderSettings();
     this.settings.outputFolder = this.settings.outputFolder.trim() || DEFAULT_SETTINGS.outputFolder;
     this.settings.temperature = Number.isFinite(candidate.temperature) ? clampNumber(candidate.temperature, 0, 2) : DEFAULT_SETTINGS.temperature;
-    this.settings.maxCharsPerFile = Number.isFinite(candidate.maxCharsPerFile) ? Math.max(1e3, Math.floor(candidate.maxCharsPerFile)) : DEFAULT_SETTINGS.maxCharsPerFile;
     await this.saveSettings();
   }
   async saveSettings() {
@@ -283,6 +330,9 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
           apiKey: this.settings.openaiApiKey,
           baseUrl: OPENAI_BASE_URL
         });
+        break;
+      case "anthropic":
+        models = await this.fetchAnthropicModels(this.settings.anthropicApiKey);
         break;
       case "gemini":
         models = await this.fetchGeminiModels(this.settings.geminiApiKey);
@@ -354,6 +404,38 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
       const model = (_d = (_c = item.id) == null ? void 0 : _c.trim()) != null ? _d : "";
       if (model) {
         deduped.add(model);
+      }
+    }
+    return Array.from(deduped.values()).sort((a, b) => a.localeCompare(b));
+  }
+  async fetchAnthropicModels(apiKeyRaw) {
+    var _a, _b, _c, _d;
+    const apiKey = apiKeyRaw.trim();
+    if (!apiKey) {
+      throw new Error("Anthropic API key is required.");
+    }
+    let response;
+    try {
+      response = await (0, import_obsidian.requestUrl)({
+        url: `${ANTHROPIC_BASE_URL}/models`,
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": ANTHROPIC_API_VERSION
+        }
+      });
+    } catch (error) {
+      throw new Error(`Anthropic model list request failed: ${this.humanizeError(error)}`);
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(this.buildModelListError(response.status, response.json, response.text));
+    }
+    const payload = (_a = response.json) != null ? _a : {};
+    const deduped = /* @__PURE__ */ new Set();
+    for (const model of (_b = payload.data) != null ? _b : []) {
+      const id = (_d = (_c = model.id) == null ? void 0 : _c.trim()) != null ? _d : "";
+      if (id) {
+        deduped.add(id);
       }
     }
     return Array.from(deduped.values()).sort((a, b) => a.localeCompare(b));
@@ -476,6 +558,8 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     };
     setFromLegacy("openaiApiKey", fromLegacyConnection("openai", "apiKey"));
     setFromLegacy("openaiModel", fromLegacyConnection("openai", "model"));
+    setFromLegacy("anthropicApiKey", fromLegacyConnection("anthropic", "apiKey"));
+    setFromLegacy("anthropicModel", fromLegacyConnection("anthropic", "model"));
     setFromLegacy("geminiApiKey", fromLegacyConnection("gemini", "apiKey"));
     setFromLegacy("geminiModel", fromLegacyConnection("gemini", "model"));
     setFromLegacy("googleCloudApiKey", fromLegacyConnection("google-cloud", "apiKey"));
@@ -505,6 +589,8 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
   normalizeProviderSettings() {
     this.settings.openaiApiKey = this.settings.openaiApiKey.trim();
     this.settings.openaiModel = this.settings.openaiModel.trim() || DEFAULT_SETTINGS.openaiModel;
+    this.settings.anthropicApiKey = this.settings.anthropicApiKey.trim();
+    this.settings.anthropicModel = this.settings.anthropicModel.trim() || DEFAULT_SETTINGS.anthropicModel;
     this.settings.geminiApiKey = this.settings.geminiApiKey.trim();
     this.settings.geminiModel = this.settings.geminiModel.trim() || DEFAULT_SETTINGS.geminiModel;
     this.settings.googleCloudApiKey = this.settings.googleCloudApiKey.trim();
@@ -532,6 +618,8 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     switch (this.settings.provider) {
       case "openai":
         return this.resolveOpenAiProvider();
+      case "anthropic":
+        return this.resolveAnthropicProvider();
       case "gemini":
         return this.resolveGeminiProvider();
       case "google-cloud":
@@ -563,6 +651,24 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
       baseUrl: OPENAI_BASE_URL,
       model,
       authHeader: "bearer"
+    };
+  }
+  resolveAnthropicProvider() {
+    const apiKey = this.settings.anthropicApiKey.trim();
+    const model = this.settings.anthropicModel.trim();
+    if (!apiKey) {
+      throw new Error("Anthropic API key is required.");
+    }
+    if (!model) {
+      throw new Error("Anthropic model is required.");
+    }
+    return {
+      id: "anthropic",
+      displayName: PROVIDER_LABELS.anthropic,
+      apiKey,
+      baseUrl: ANTHROPIC_BASE_URL,
+      model,
+      authHeader: "x-api-key"
     };
   }
   resolveGeminiProvider() {
@@ -748,12 +854,96 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     }
     return merged;
   }
+  normalizeOutputFilenameElements(value, legacyValue) {
+    var _a;
+    const normalized = [];
+    const usedIds = /* @__PURE__ */ new Set();
+    const parseKind = (raw) => {
+      if (raw === "custom_text") {
+        return "custom_text";
+      }
+      if (typeof raw === "string" && OUTPUT_FILENAME_BLOCK_ID_SET.has(raw)) {
+        return raw;
+      }
+      return null;
+    };
+    const ensureUniqueId = (preferredId) => {
+      const fallback = `filename-part-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      const base = (preferredId == null ? void 0 : preferredId.trim()) || fallback;
+      let candidate = base;
+      let index = 2;
+      while (usedIds.has(candidate)) {
+        candidate = `${base}-${index}`;
+        index += 1;
+      }
+      usedIds.add(candidate);
+      return candidate;
+    };
+    const pushElement = (element) => {
+      var _a2, _b;
+      normalized.push({
+        ...element,
+        id: ensureUniqueId(element.id),
+        customText: element.kind === "custom_text" ? (_b = (_a2 = element.customText) == null ? void 0 : _a2.trim()) != null ? _b : "" : void 0
+      });
+    };
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (typeof entry === "string") {
+          const kind2 = parseKind(entry);
+          if (kind2) {
+            pushElement(createOutputFilenameElement(kind2, { enabled: true }));
+          }
+          continue;
+        }
+        if (!entry || typeof entry !== "object") {
+          continue;
+        }
+        const record = entry;
+        const kind = parseKind((_a = record.kind) != null ? _a : record.type);
+        if (!kind) {
+          continue;
+        }
+        const enabled = typeof record.enabled === "boolean" ? record.enabled : true;
+        const customText = typeof record.customText === "string" ? record.customText : typeof record.value === "string" ? record.value : "";
+        const id = typeof record.id === "string" ? record.id : "";
+        pushElement(
+          createOutputFilenameElement(kind, {
+            id,
+            enabled,
+            customText
+          })
+        );
+      }
+    }
+    if (!normalized.length && Array.isArray(legacyValue)) {
+      for (const entry of legacyValue) {
+        if (typeof entry !== "string") continue;
+        const kind = parseKind(entry);
+        if (!kind || kind === "custom_text") continue;
+        pushElement(createOutputFilenameElement(kind, { enabled: true }));
+      }
+    }
+    if (!normalized.length) {
+      return createDefaultOutputFilenameElements();
+    }
+    for (const builtinKind of OUTPUT_FILENAME_DEFAULT_ORDER) {
+      const exists = normalized.some((element) => element.kind === builtinKind);
+      if (!exists) {
+        pushElement(createOutputFilenameElement(builtinKind, { enabled: false }));
+      }
+    }
+    if (!normalized.some((element) => element.enabled)) {
+      normalized[0].enabled = true;
+    }
+    return normalized;
+  }
   getPresetById(id) {
     var _a;
     return (_a = this.settings.promptPresets.find((preset) => preset.id === id)) != null ? _a : null;
   }
   async runVaultSummaryFlow() {
-    var _a;
+    var _a, _b;
     if (!this.ensureConnectionSettings()) {
       return;
     }
@@ -766,7 +956,10 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     if (!selection || selection.files.length === 0) {
       return;
     }
-    await this.generateFromFiles(selection.files, selection.presetId, "vault", (_a = selection.timeFilterWindow) != null ? _a : null);
+    await this.generateFromFiles(selection.files, selection.presetId, "vault", {
+      timeFilterWindow: (_a = selection.timeFilterWindow) != null ? _a : null,
+      searchString: (_b = selection.searchString) != null ? _b : null
+    });
   }
   async runActiveFileFlow(activeFile) {
     if (!this.ensureConnectionSettings()) {
@@ -811,7 +1004,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
       modal.open();
     });
   }
-  async generateFromFiles(files, presetId, mode, timeFilterWindow = null) {
+  async generateFromFiles(files, presetId, mode, context = {}) {
     const preset = this.getPresetById(presetId);
     if (!preset) {
       new import_obsidian.Notice("Selected prompt preset was not found.");
@@ -830,7 +1023,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
         return;
       }
       if (mode === "vault") {
-        const createdPath = await this.writeVaultSummaryFile(files, preset, llmOutput, provider, timeFilterWindow);
+        const createdPath = await this.writeVaultSummaryFile(files, preset, llmOutput, provider, context);
         new import_obsidian.Notice(`Summary created: ${createdPath}`);
       } else {
         const createdPath = await this.writeActiveFileResult(files[0], preset, llmOutput, provider);
@@ -870,6 +1063,9 @@ ${rawContent}
   }
   async requestCompletion(systemPrompt, userPrompt, provider) {
     var _a, _b;
+    if (provider.id === "anthropic") {
+      return await this.requestAnthropicCompletion(systemPrompt, userPrompt, provider);
+    }
     const endpoint = this.buildChatCompletionsEndpoint(provider.baseUrl);
     const headers = this.buildAuthHeaders(provider.authHeader, provider.apiKey);
     const body = {
@@ -891,9 +1087,46 @@ ${rawContent}
         body: JSON.stringify(body)
       });
     } catch (error) {
-      const providerHint = provider.id === "google-cloud" ? " For Vertex AI, use a short-lived Google Cloud OAuth access token and verify project/location." : provider.id === "azure" ? " For Azure, verify resource endpoint, deployment ID, and API version." : provider.id === "aws-polly" ? " For Bedrock, verify region, Bedrock API key, and supported model ID." : "";
+      const providerHint = provider.id === "google-cloud" ? " For Vertex AI, use a short-lived Google Cloud OAuth access token and verify project/location." : provider.id === "azure" ? " For Azure, verify resource endpoint, deployment ID, and API version." : provider.id === "aws-polly" ? " For Bedrock, verify region, Bedrock API key, and supported model ID." : provider.id === "anthropic" ? " For Anthropic, verify API key validity and an available model ID from `/v1/models`." : "";
       throw new Error(
         `${provider.displayName} request failed: ${this.humanizeError(error)}. Check API key/token, endpoint, and model for this provider.${providerHint}`
+      );
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const raw = ((_a = response.text) == null ? void 0 : _a.trim()) || JSON.stringify((_b = response.json) != null ? _b : {});
+      throw new Error(`${provider.displayName} request failed (${response.status}): ${raw.slice(0, 500)}`);
+    }
+    const text = this.extractTextFromResponse(response.json);
+    if (!text) {
+      throw new Error("LLM response contained no text.");
+    }
+    return text.trim();
+  }
+  async requestAnthropicCompletion(systemPrompt, userPrompt, provider) {
+    var _a, _b;
+    const endpoint = this.buildAnthropicMessagesEndpoint(provider.baseUrl);
+    const headers = this.buildAuthHeaders(provider.authHeader, provider.apiKey);
+    headers["anthropic-version"] = ANTHROPIC_API_VERSION;
+    const body = {
+      model: provider.model.trim(),
+      max_tokens: 4096,
+      temperature: this.settings.temperature,
+      messages: [{ role: "user", content: userPrompt }]
+    };
+    if (systemPrompt.trim()) {
+      body.system = systemPrompt;
+    }
+    let response;
+    try {
+      response = await (0, import_obsidian.requestUrl)({
+        url: endpoint,
+        method: "POST",
+        headers,
+        body: JSON.stringify(body)
+      });
+    } catch (error) {
+      throw new Error(
+        `${provider.displayName} request failed: ${this.humanizeError(error)}. Check API key and model for this provider.`
       );
     }
     if (response.status < 200 || response.status >= 300) {
@@ -916,6 +1149,18 @@ ${rawContent}
     const [pathPart, queryPart] = trimmed.split("?", 2);
     const normalizedPath = pathPart.replace(/\/+$/, "");
     const endpoint = `${normalizedPath}/chat/completions`;
+    return queryPart ? `${endpoint}?${queryPart}` : endpoint;
+  }
+  buildAnthropicMessagesEndpoint(baseUrl) {
+    const trimmed = baseUrl.trim();
+    if (!trimmed) return "";
+    const hasMessagesEndpoint = /\/messages(?:\?|$)/.test(trimmed);
+    if (hasMessagesEndpoint) {
+      return trimmed;
+    }
+    const [pathPart, queryPart] = trimmed.split("?", 2);
+    const normalizedPath = pathPart.replace(/\/+$/, "");
+    const endpoint = `${normalizedPath}/messages`;
     return queryPart ? `${endpoint}?${queryPart}` : endpoint;
   }
   buildAuthHeaders(authHeader, apiKey) {
@@ -946,10 +1191,10 @@ ${rawContent}
     return headers;
   }
   extractTextFromResponse(payload) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const json = payload;
     const choice = (_a = json == null ? void 0 : json.choices) == null ? void 0 : _a[0];
-    const content = (_d = (_c = (_b = choice == null ? void 0 : choice.message) == null ? void 0 : _b.content) != null ? _c : choice == null ? void 0 : choice.text) != null ? _d : json == null ? void 0 : json.output_text;
+    const content = (_e = (_d = (_c = (_b = choice == null ? void 0 : choice.message) == null ? void 0 : _b.content) != null ? _c : choice == null ? void 0 : choice.text) != null ? _d : json == null ? void 0 : json.output_text) != null ? _e : json == null ? void 0 : json.content;
     if (typeof content === "string") {
       return content;
     }
@@ -964,19 +1209,82 @@ ${rawContent}
     }
     return null;
   }
-  async writeVaultSummaryFile(files, preset, llmOutput, provider, timeFilterWindow = null) {
+  createCustomOutputFilenameElement(customText = "") {
+    return createOutputFilenameElement("custom_text", {
+      enabled: true,
+      customText
+    });
+  }
+  getOutputFilenamePreview() {
+    var _a, _b;
+    const preset = (_b = (_a = this.getPresetById(this.settings.defaultPresetId)) != null ? _a : this.settings.promptPresets[0]) != null ? _b : DEFAULT_PRESETS[0];
+    const sampleDate = new Date(2026, 0, 31, 14, 23, 45);
+    const sampleContext = {
+      timeFilterWindow: "modified within last 7 days",
+      searchString: "example query"
+    };
+    return `${this.buildVaultOutputFileBaseName(preset, sampleDate, sampleContext)}.md`;
+  }
+  buildVaultOutputFileBaseName(preset, createdAt, context = {}) {
+    const pieces = [];
+    const elements = this.settings.outputFilenameElements.length > 0 ? this.settings.outputFilenameElements : createDefaultOutputFilenameElements();
+    for (const element of elements) {
+      if (!element.enabled) {
+        continue;
+      }
+      const piece = this.resolveOutputFilenameElementValue(element, preset, createdAt, context);
+      if (piece) {
+        pieces.push(piece);
+      }
+    }
+    if (!pieces.length) {
+      pieces.push(this.formatDateForFilename(createdAt));
+      pieces.push(slugify(preset.suffix || preset.name));
+      pieces.push(this.formatTimeForFilename(createdAt));
+    }
+    return pieces.join(" - ");
+  }
+  resolveOutputFilenameElementValue(element, preset, createdAt, context) {
+    var _a;
+    switch (element.kind) {
+      case "date_created":
+        return this.formatDateForFilename(createdAt);
+      case "prompt_choice":
+        return slugify(preset.suffix || preset.name);
+      case "time_created":
+        return this.formatTimeForFilename(createdAt);
+      case "time_filter":
+        return context.timeFilterWindow ? slugify(context.timeFilterWindow) : "";
+      case "search_string":
+        return context.searchString ? slugify(context.searchString) : "";
+      case "custom_text":
+        return ((_a = element.customText) == null ? void 0 : _a.trim()) ? slugify(element.customText) : "";
+      default:
+        return "";
+    }
+  }
+  formatDateForFilename(date) {
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+  formatTimeForFilename(date) {
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+  }
+  async writeVaultSummaryFile(files, preset, llmOutput, provider, context = {}) {
     const outputFolder = await this.ensureFolder(this.settings.outputFolder || DEFAULT_SETTINGS.outputFolder);
-    const timestamp = this.formatTimestamp(/* @__PURE__ */ new Date());
-    const baseName = `${timestamp} - ${slugify(preset.suffix)} summary`;
+    const createdAt = /* @__PURE__ */ new Date();
+    const baseName = this.buildVaultOutputFileBaseName(preset, createdAt, context);
     const filePath = await this.createUniqueFilePath(
       (0, import_obsidian.normalizePath)(`${outputFolder}/${baseName}.md`)
     );
     const sourceList = files.map((file) => `- [[${file.path}]]`).join("\n");
     const metadataLines = [
-      `Generated: ${(/* @__PURE__ */ new Date()).toISOString()}`,
+      `Generated: ${createdAt.toISOString()}`,
       `Provider: ${provider.displayName}`,
       `Model: ${provider.model}`,
-      ...timeFilterWindow ? [`Time window: ${timeFilterWindow}`] : []
+      ...context.timeFilterWindow ? [`Time window: ${context.timeFilterWindow}`] : [],
+      ...context.searchString ? [`Search string: ${context.searchString}`] : []
     ];
     const content = [
       `# ${preset.name}`,
@@ -1050,16 +1358,6 @@ ${rawContent}
       candidate = `${stem} ${index}${ext}`;
     }
     return candidate;
-  }
-  formatTimestamp(date) {
-    const pad = (value) => String(value).padStart(2, "0");
-    const y = date.getFullYear();
-    const m = pad(date.getMonth() + 1);
-    const d = pad(date.getDate());
-    const h = pad(date.getHours());
-    const min = pad(date.getMinutes());
-    const s = pad(date.getSeconds());
-    return `${y}-${m}-${d} ${h}-${min}-${s}`;
   }
   trimTrailingSlash(value) {
     return value.replace(/\/+$/, "");
@@ -1248,7 +1546,7 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
       placeholder: "Filter by file name or path"
     });
     searchInput.oninput = () => {
-      this.searchTerm = searchInput.value.trim().toLowerCase();
+      this.searchTerm = searchInput.value.trim();
       this.renderFileTree();
     };
     const actionRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row vault-ai-summarizer-action-row" });
@@ -1295,7 +1593,8 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
       this.finish({
         files: selectedFiles,
         presetId: this.selectedPresetId,
-        timeFilterWindow: this.getSelectedTimeFilterWindowForMetadata()
+        timeFilterWindow: this.getSelectedTimeFilterWindowForMetadata(),
+        searchString: this.getSelectedSearchStringForMetadata()
       });
     };
   }
@@ -1314,7 +1613,7 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
     this.close();
   }
   getVisibleFiles() {
-    const query = this.searchTerm;
+    const query = this.searchTerm.trim().toLowerCase();
     return this.allFiles.filter((file) => {
       if (query) {
         const haystack = `${file.basename} ${file.path}`.toLowerCase();
@@ -1544,6 +1843,10 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
     }
     return this.describeRelativeDateFilter();
   }
+  getSelectedSearchStringForMetadata() {
+    const query = this.searchTerm.trim();
+    return query ? query : null;
+  }
   subtractRelativeTime(date, amount, unit) {
     const next = new Date(date);
     switch (unit) {
@@ -1668,6 +1971,8 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
         await this.plugin.saveSettings();
       });
     });
+    this.section("Output file naming", "Control how vault-summary output filenames are composed.");
+    this.renderOutputFilenameBuilder(containerEl);
     new import_obsidian.Setting(containerEl).setName("Default prompt preset").setDesc("Pre-selected preset in the multi-file selection modal.").addDropdown((dropdown) => {
       this.plugin.settings.promptPresets.forEach((preset) => {
         dropdown.addOption(preset.id, preset.name);
@@ -1679,7 +1984,7 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
     });
     this.section("Model provider", "Configure one provider at a time.");
     new import_obsidian.Setting(containerEl).setName("Provider").setDesc("Select the provider used for summary generation.").addDropdown(
-      (dropdown) => dropdown.addOption("openai", PROVIDER_LABELS.openai).addOption("gemini", PROVIDER_LABELS.gemini).addOption("google-cloud", PROVIDER_LABELS["google-cloud"]).addOption("azure", PROVIDER_LABELS.azure).addOption("elevenlabs", PROVIDER_LABELS.elevenlabs).addOption("aws-polly", PROVIDER_LABELS["aws-polly"]).addOption("openai-compatible", PROVIDER_LABELS["openai-compatible"]).setValue(this.plugin.settings.provider).onChange(async (value) => {
+      (dropdown) => dropdown.addOption("openai", PROVIDER_LABELS.openai).addOption("anthropic", PROVIDER_LABELS.anthropic).addOption("gemini", PROVIDER_LABELS.gemini).addOption("google-cloud", PROVIDER_LABELS["google-cloud"]).addOption("azure", PROVIDER_LABELS.azure).addOption("elevenlabs", PROVIDER_LABELS.elevenlabs).addOption("aws-polly", PROVIDER_LABELS["aws-polly"]).addOption("openai-compatible", PROVIDER_LABELS["openai-compatible"]).setValue(this.plugin.settings.provider).onChange(async (value) => {
         this.plugin.settings.provider = value;
         await this.plugin.saveSettings();
         this.display();
@@ -1689,6 +1994,9 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
     switch (this.plugin.settings.provider) {
       case "openai":
         this.displayOpenAiSettings(containerEl);
+        break;
+      case "anthropic":
+        this.displayAnthropicSettings(containerEl);
         break;
       case "gemini":
         this.displayGeminiSettings(containerEl);
@@ -1716,47 +2024,9 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
         await this.addPromptPreset();
       });
     });
+    const promptPresetListEl = containerEl.createDiv({ cls: "vault-ai-summarizer-preset-list" });
     for (const preset of this.plugin.settings.promptPresets) {
-      const isDefaultPreset = this.isDefaultPresetId(preset.id);
-      const defaultPreset = DEFAULT_PRESETS.find((candidate) => candidate.id === preset.id);
-      new import_obsidian.Setting(containerEl).setName(`${preset.name} (${preset.suffix})`).setDesc(
-        isDefaultPreset ? "Built-in preset. You can edit it or remove it from your list." : "Custom preset. You can edit or remove it."
-      ).addButton((button) => {
-        button.setButtonText("Remove").setWarning().onClick(async () => {
-          await this.removePromptPreset(preset.id);
-        });
-      });
-      this.textSetting(
-        containerEl,
-        "Preset name",
-        "Name shown in preset pickers.",
-        preset.name,
-        async (value) => {
-          const fallbackName = (defaultPreset == null ? void 0 : defaultPreset.name) || "Untitled preset";
-          preset.name = value.trim() || fallbackName;
-          await this.plugin.saveSettings();
-        },
-        "My custom preset"
-      );
-      this.textSetting(
-        containerEl,
-        "File suffix",
-        "Suffix used in output filenames for this preset.",
-        preset.suffix,
-        async (value) => {
-          const fallbackSuffix = (defaultPreset == null ? void 0 : defaultPreset.suffix) || preset.name || preset.id;
-          preset.suffix = slugify(value.trim() || fallbackSuffix);
-          await this.plugin.saveSettings();
-        },
-        "custom-suffix"
-      );
-      new import_obsidian.Setting(containerEl).setName("Prompt").setDesc("Assistant instructions for this preset.").addTextArea((text) => {
-        text.inputEl.rows = 5;
-        text.setValue(preset.prompt).onChange(async (value) => {
-          preset.prompt = value.trim() || (defaultPreset == null ? void 0 : defaultPreset.prompt) || preset.prompt;
-          await this.plugin.saveSettings();
-        });
-      });
+      this.renderPromptPresetCard(promptPresetListEl, preset);
     }
     new import_obsidian.Setting(containerEl).setName("Reset prompt presets").setDesc("Restore all built-in preset prompts to their defaults.").addButton((button) => {
       button.setButtonText("Restore defaults").setWarning().onClick(async () => {
@@ -1768,6 +2038,194 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
         new import_obsidian.Notice("Prompt presets restored.");
       });
     });
+  }
+  renderPromptPresetCard(containerEl, preset) {
+    const isBuiltInPreset = this.isDefaultPresetId(preset.id);
+    const isDefaultSelection = this.plugin.settings.defaultPresetId === preset.id;
+    const defaultPreset = DEFAULT_PRESETS.find((candidate) => candidate.id === preset.id);
+    const cardEl = containerEl.createDiv({ cls: "vault-ai-summarizer-preset-card" });
+    const headerEl = cardEl.createDiv({ cls: "vault-ai-summarizer-preset-card-header" });
+    const titleWrapEl = headerEl.createDiv({ cls: "vault-ai-summarizer-preset-card-title-wrap" });
+    titleWrapEl.createEl("h4", {
+      cls: "vault-ai-summarizer-preset-card-title",
+      text: preset.name
+    });
+    const metaParts = [`Suffix: ${preset.suffix}`, isBuiltInPreset ? "Built-in preset" : "Custom preset"];
+    titleWrapEl.createEl("small", {
+      cls: "vault-ai-summarizer-preset-card-meta",
+      text: metaParts.join(" | ")
+    });
+    const actionsEl = headerEl.createDiv({ cls: "vault-ai-summarizer-preset-card-actions" });
+    if (isDefaultSelection) {
+      actionsEl.createSpan({ cls: "vault-ai-summarizer-preset-default-badge", text: "Default" });
+    } else {
+      const defaultButton = actionsEl.createEl("button", { text: "Set default" });
+      defaultButton.onclick = () => {
+        void (async () => {
+          this.plugin.settings.defaultPresetId = preset.id;
+          await this.plugin.saveSettings();
+          this.display();
+        })();
+      };
+    }
+    const removeButton = actionsEl.createEl("button", { text: "Remove" });
+    removeButton.addClass("mod-warning");
+    removeButton.onclick = () => {
+      void this.removePromptPreset(preset.id);
+    };
+    const bodyEl = cardEl.createDiv({ cls: "vault-ai-summarizer-preset-card-body" });
+    this.textSetting(
+      bodyEl,
+      "Preset name",
+      "Name shown in prompt pickers.",
+      preset.name,
+      async (value) => {
+        const fallbackName = (defaultPreset == null ? void 0 : defaultPreset.name) || "Untitled preset";
+        preset.name = value.trim() || fallbackName;
+        await this.plugin.saveSettings();
+      },
+      "My custom preset"
+    );
+    this.textSetting(
+      bodyEl,
+      "File suffix",
+      "Suffix used in output filenames for this preset.",
+      preset.suffix,
+      async (value) => {
+        const fallbackSuffix = (defaultPreset == null ? void 0 : defaultPreset.suffix) || preset.name || preset.id;
+        preset.suffix = slugify(value.trim() || fallbackSuffix);
+        await this.plugin.saveSettings();
+      },
+      "custom-suffix"
+    );
+    new import_obsidian.Setting(bodyEl).setName("Prompt instructions").setDesc("Assistant instructions used when this preset is selected.").addTextArea((text) => {
+      text.inputEl.rows = 7;
+      text.setValue(preset.prompt).onChange(async (value) => {
+        preset.prompt = value.trim() || (defaultPreset == null ? void 0 : defaultPreset.prompt) || preset.prompt;
+        await this.plugin.saveSettings();
+      });
+    });
+  }
+  renderOutputFilenameBuilder(containerEl) {
+    const builderEl = containerEl.createDiv({ cls: "vault-ai-summarizer-filename-builder" });
+    builderEl.createEl("p", {
+      cls: "vault-ai-summarizer-filename-builder-intro",
+      text: "Enable elements, reorder them, and add custom text blocks for vault-summary filenames."
+    });
+    const listEl = builderEl.createDiv({ cls: "vault-ai-summarizer-filename-builder-list" });
+    const actionRow = builderEl.createDiv({ cls: "vault-ai-summarizer-filename-builder-actions" });
+    const addCustomButton = actionRow.createEl("button", { text: "Add custom string" });
+    const resetButton = actionRow.createEl("button", { text: "Reset defaults" });
+    const previewRow = builderEl.createDiv({ cls: "vault-ai-summarizer-filename-preview" });
+    previewRow.createSpan({
+      cls: "vault-ai-summarizer-filename-preview-label",
+      text: "Preview"
+    });
+    const previewValue = previewRow.createEl("code", {
+      cls: "vault-ai-summarizer-filename-preview-value"
+    });
+    const ensureList = () => {
+      if (this.plugin.settings.outputFilenameElements.length > 0) {
+        return this.plugin.settings.outputFilenameElements;
+      }
+      this.plugin.settings.outputFilenameElements = createDefaultOutputFilenameElements();
+      return this.plugin.settings.outputFilenameElements;
+    };
+    const saveAndUpdatePreview = async () => {
+      await this.plugin.saveSettings();
+      previewValue.setText(this.plugin.getOutputFilenamePreview());
+    };
+    const moveElement = async (fromIndex, toIndex) => {
+      const elements = ensureList();
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= elements.length || toIndex >= elements.length) {
+        return;
+      }
+      const [moved] = elements.splice(fromIndex, 1);
+      elements.splice(toIndex, 0, moved);
+      await this.plugin.saveSettings();
+      renderList();
+    };
+    const renderList = () => {
+      const elements = ensureList();
+      listEl.empty();
+      const optionById = /* @__PURE__ */ new Map();
+      for (const option of OUTPUT_FILENAME_BLOCK_OPTIONS) {
+        optionById.set(option.id, { label: option.label, description: option.description });
+      }
+      elements.forEach((element, index) => {
+        var _a, _b, _c;
+        const row = listEl.createDiv({ cls: "vault-ai-summarizer-filename-row" });
+        const textWrap = row.createDiv({ cls: "vault-ai-summarizer-filename-row-text" });
+        if (element.kind === "custom_text") {
+          textWrap.createDiv({
+            cls: "vault-ai-summarizer-filename-row-label",
+            text: "Custom string"
+          });
+          const customInput = textWrap.createEl("input", {
+            cls: "vault-ai-summarizer-filename-custom-input",
+            type: "text",
+            placeholder: "summary",
+            value: (_a = element.customText) != null ? _a : ""
+          });
+          customInput.oninput = () => {
+            element.customText = customInput.value;
+            previewValue.setText(this.plugin.getOutputFilenamePreview());
+          };
+          customInput.onblur = async () => {
+            element.customText = customInput.value.trim();
+            customInput.value = element.customText;
+            await saveAndUpdatePreview();
+          };
+        } else {
+          const option = optionById.get(element.kind);
+          textWrap.createDiv({
+            cls: "vault-ai-summarizer-filename-row-label",
+            text: (_b = option == null ? void 0 : option.label) != null ? _b : element.kind
+          });
+          textWrap.createEl("small", {
+            text: (_c = option == null ? void 0 : option.description) != null ? _c : ""
+          });
+        }
+        const controls = row.createDiv({ cls: "vault-ai-summarizer-filename-row-controls" });
+        const toggleLabel = controls.createEl("label", { cls: "vault-ai-summarizer-filename-toggle" });
+        const enabledInput = toggleLabel.createEl("input", { type: "checkbox" });
+        enabledInput.checked = element.enabled;
+        toggleLabel.createSpan({ text: "On" });
+        enabledInput.onchange = async () => {
+          element.enabled = enabledInput.checked;
+          await saveAndUpdatePreview();
+        };
+        const moveUpButton = controls.createEl("button", { text: "\u2191" });
+        moveUpButton.disabled = index === 0;
+        moveUpButton.setAttr("aria-label", "Move up");
+        moveUpButton.onclick = () => {
+          void moveElement(index, index - 1);
+        };
+        const moveDownButton = controls.createEl("button", { text: "\u2193" });
+        moveDownButton.disabled = index === elements.length - 1;
+        moveDownButton.setAttr("aria-label", "Move down");
+        moveDownButton.onclick = () => {
+          void moveElement(index, index + 1);
+        };
+        if (element.kind === "custom_text") {
+          const removeButton = controls.createEl("button", { text: "Remove" });
+          removeButton.onclick = () => {
+            this.plugin.settings.outputFilenameElements.splice(index, 1);
+            void saveAndUpdatePreview().then(() => renderList());
+          };
+        }
+      });
+      previewValue.setText(this.plugin.getOutputFilenamePreview());
+    };
+    addCustomButton.onclick = () => {
+      ensureList().push(this.plugin.createCustomOutputFilenameElement("summary"));
+      void saveAndUpdatePreview().then(() => renderList());
+    };
+    resetButton.onclick = () => {
+      this.plugin.settings.outputFilenameElements = createDefaultOutputFilenameElements();
+      void saveAndUpdatePreview().then(() => renderList());
+    };
+    renderList();
   }
   isDefaultPresetId(presetId) {
     return DEFAULT_PRESETS.some((preset) => preset.id === presetId);
@@ -1871,6 +2329,34 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
       getCurrentValue: () => this.plugin.settings.openaiModel,
       setCurrentValue: async (value) => {
         this.plugin.settings.openaiModel = value;
+        await this.plugin.saveSettings();
+      }
+    });
+  }
+  displayAnthropicSettings(containerEl) {
+    this.noteBlock(
+      containerEl,
+      "Uses Anthropic's Messages API. API key and model are required."
+    );
+    this.passwordSetting(
+      containerEl,
+      "Anthropic API key",
+      "Get one from https://console.anthropic.com/settings/keys",
+      this.plugin.settings.anthropicApiKey,
+      async (value) => {
+        this.plugin.settings.anthropicApiKey = value;
+        await this.plugin.saveSettings();
+        this.scheduleModelRefresh("anthropic");
+      },
+      "sk-ant-..."
+    );
+    this.renderModelDropdown(containerEl, {
+      provider: "anthropic",
+      name: "Model",
+      description: "Choose from the live Anthropic `/v1/models` list.",
+      getCurrentValue: () => this.plugin.settings.anthropicModel,
+      setCurrentValue: async (value) => {
+        this.plugin.settings.anthropicModel = value;
         await this.plugin.saveSettings();
       }
     });
@@ -2242,6 +2728,8 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
     switch (provider) {
       case "openai":
         return this.plugin.settings.openaiApiKey.trim() ? { ready: true } : { ready: false, reason: "enter an OpenAI API key to load models" };
+      case "anthropic":
+        return this.plugin.settings.anthropicApiKey.trim() ? { ready: true } : { ready: false, reason: "enter an Anthropic API key to load models" };
       case "gemini":
         return this.plugin.settings.geminiApiKey.trim() ? { ready: true } : { ready: false, reason: "enter a Gemini API key to load models" };
       case "google-cloud":

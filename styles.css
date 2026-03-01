@@ -360,6 +360,179 @@
   color: var(--text-normal);
 }
 
+.vault-ai-summarizer-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin: 0.4rem 0 0.9rem;
+}
+
+.vault-ai-summarizer-preset-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: var(--background-secondary);
+  overflow: hidden;
+}
+
+.vault-ai-summarizer-preset-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.65rem 0.75rem 0.6rem;
+  background: var(--background-secondary-alt, var(--background-secondary));
+}
+
+.vault-ai-summarizer-preset-card-title-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.vault-ai-summarizer-preset-card-title {
+  margin: 0;
+  font-size: var(--font-ui-medium);
+  line-height: 1.2;
+}
+
+.vault-ai-summarizer-preset-card-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.vault-ai-summarizer-preset-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+.vault-ai-summarizer-preset-default-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.14rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--interactive-accent);
+  color: var(--interactive-accent);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+}
+
+.vault-ai-summarizer-preset-card-body {
+  padding: 0 0.75rem 0.25rem;
+}
+
+.vault-ai-summarizer-preset-card-body textarea {
+  min-height: 7.5rem;
+}
+
+.vault-ai-summarizer-filename-builder {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  padding: 0.65rem 0.7rem 0.7rem;
+  background: var(--background-secondary);
+  margin: 0.3rem 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.vault-ai-summarizer-filename-builder-intro {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.vault-ai-summarizer-filename-builder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.vault-ai-summarizer-filename-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.vault-ai-summarizer-filename-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vault-ai-summarizer-filename-row-label {
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.vault-ai-summarizer-filename-row-text > small {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.vault-ai-summarizer-filename-custom-input {
+  width: 100%;
+  margin-top: 0.1rem;
+}
+
+.vault-ai-summarizer-filename-row-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+}
+
+.vault-ai-summarizer-filename-row-controls button {
+  padding: 0.2rem 0.42rem;
+  border-radius: 6px;
+}
+
+.vault-ai-summarizer-filename-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  user-select: none;
+  margin-right: 0.15rem;
+}
+
+.vault-ai-summarizer-filename-builder-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.vault-ai-summarizer-filename-preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vault-ai-summarizer-filename-preview-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.vault-ai-summarizer-filename-preview-value {
+  display: block;
+  width: 100%;
+  padding: 0.35rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 768px) {
   .vault-ai-summarizer-modal {
     gap: 0.6rem;
@@ -416,6 +589,25 @@
 
   .vault-ai-summarizer-footer {
     gap: 0.5rem;
+  }
+
+  .vault-ai-summarizer-filename-row {
+    flex-wrap: wrap;
+  }
+
+  .vault-ai-summarizer-filename-row-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .vault-ai-summarizer-preset-card-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+  }
+
+  .vault-ai-summarizer-preset-card-actions {
+    justify-content: flex-start;
   }
 }
 

@@ -7,8 +7,9 @@ Generate markdown summaries from selected Obsidian notes using multiple configur
 - Select any number of markdown files from a vault-wide picker modal.
 - Send selected notes to an LLM and save the output into a configured folder.
 - Send only the currently open note with a selected preset and create a sibling output file.
-- Provider selector with the same 7-provider set as Note TTS Audio:
+- Provider selector with an 8-provider set:
   - OpenAI
+  - Anthropic
   - Google Gemini
   - Google Cloud Vertex AI
   - Azure OpenAI
@@ -29,6 +30,7 @@ Generate markdown summaries from selected Obsidian notes using multiple configur
 ## Provider settings (summary)
 
 - OpenAI: API key + model
+- Anthropic: API key + model
 - Gemini (AI Studio): API key + model (endpoint preconfigured)
 - Google Cloud Vertex AI: OAuth access token + project ID + location + model (endpoint auto-built; optional override)
 - Azure OpenAI: API key + resource endpoint + deployment ID + API version (full endpoint also supported)
