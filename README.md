@@ -49,6 +49,19 @@ Generate markdown summaries from selected Obsidian notes using multiple configur
 - API keys are stored locally in Obsidian plugin data (`data.json`). Do not commit that file.
 - The plugin includes no telemetry, ads, or self-update mechanism.
 
+## Acknowledgements and inspirations
+
+This plugin and its companion plugins in the development vault were shaped by patterns from existing community plugins, including:
+
+- `ai-providers` / `local-gpt` by Pavel Frankov for multi-provider settings architecture.
+- `aloud-tts` by Adrian Lyjak for provider-specific UX patterns.
+- `transcription-audio` by cha-yh and `scribe` by Mike Alicea for transcription/summarization workflow framing.
+
+Credit where due:
+
+- Matthias provided the product vision, selected scope, and performed iterative testing/validation.
+- Codex implemented most of the code and release preparation steps under Matthias's direction.
+
 ## Build
 
 ```bash
