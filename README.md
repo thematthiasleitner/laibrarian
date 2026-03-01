@@ -51,11 +51,10 @@ Generate markdown summaries from selected Obsidian notes using multiple configur
 
 ## Acknowledgements and inspirations
 
-This plugin and its companion plugins in the development vault were shaped by patterns from existing community plugins, including:
+This plugin takes inspiration from community work that is directly relevant to multi-provider summarization workflows:
 
 - `ai-providers` / `local-gpt` by Pavel Frankov for multi-provider settings architecture.
-- `aloud-tts` by Adrian Lyjak for provider-specific UX patterns.
-- `transcription-audio` by cha-yh and `scribe` by Mike Alicea for transcription/summarization workflow framing.
+- `scribe` by Mike Alicea for structured transformation/summarization workflow framing.
 
 Credit where due:
 
