@@ -261,7 +261,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
   async onload() {
     await this.loadSettings();
     this.addSettingTab(new VaultAiSummarizerSettingTab(this.app, this));
-    this.addRibbonIcon("file-text", "laibrarian", () => {
+    this.addRibbonIcon("file-text", "Summarize notes", () => {
       void this.openLauncherFromRibbon();
     });
     this.addCommand({
@@ -506,7 +506,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     if (option.id === "active") {
       const activeFile = this.app.workspace.getActiveFile();
       if (!activeFile || activeFile.extension !== "md") {
-        new import_obsidian.Notice("Open a markdown note first.");
+        new import_obsidian.Notice("Open a Markdown note first.");
         return;
       }
       await this.runActiveFileFlow(activeFile);
@@ -2597,7 +2597,7 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
     this.textSetting(
       containerEl,
       "API base URL",
-      "Example: https://api.example.com/v1 or http://localhost:11434/v1",
+      "Base URL of your OpenAI-compatible endpoint.",
       this.plugin.settings.openaiCompatBaseUrl,
       async (value) => {
         this.plugin.settings.openaiCompatBaseUrl = value;

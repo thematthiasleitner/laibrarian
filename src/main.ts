@@ -423,7 +423,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     await this.loadSettings();
 
     this.addSettingTab(new VaultAiSummarizerSettingTab(this.app, this));
-    this.addRibbonIcon("file-text", "laibrarian", () => {
+    this.addRibbonIcon("file-text", "Summarize notes", () => {
       void this.openLauncherFromRibbon();
     });
 
@@ -722,7 +722,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     if (option.id === "active") {
       const activeFile = this.app.workspace.getActiveFile();
       if (!activeFile || activeFile.extension !== "md") {
-        new Notice("Open a markdown note first.");
+        new Notice("Open a Markdown note first.");
         return;
       }
       await this.runActiveFileFlow(activeFile);
@@ -3303,7 +3303,7 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
     this.textSetting(
       containerEl,
       "API base URL",
-      "Example: https://api.example.com/v1 or http://localhost:11434/v1",
+      "Base URL of your OpenAI-compatible endpoint.",
       this.plugin.settings.openaiCompatBaseUrl,
       async (value) => {
         this.plugin.settings.openaiCompatBaseUrl = value;

@@ -1,9 +1,10 @@
 {
   "id": "laibrarian",
-  "name": "laibrarian",
+  "name": "Laibrarian",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
   "description": "Summarize selected notes or the active note with LLM prompt presets and save generated markdown outputs.",
   "author": "Matthias",
+  "authorUrl": "https://github.com/thematthiasleitner",
   "isDesktopOnly": false
 }
