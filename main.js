@@ -1019,7 +1019,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
       const userPrompt = this.buildUserPrompt(files, mode, filePayload);
       const llmOutput = await this.requestCompletion(preset.prompt, userPrompt, provider);
       if (!llmOutput.trim()) {
-        new import_obsidian.Notice("The LLM returned an empty response.");
+        new import_obsidian.Notice("The model returned an empty response.");
         return;
       }
       if (mode === "vault") {
@@ -1445,7 +1445,7 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
     contentEl.createEl("h2", { text: "Summarize selected notes" });
     contentEl.createEl("p", {
       cls: "vault-ai-summarizer-intro",
-      text: "Select Markdown notes from across your vault, choose a prompt preset, then send them to the LLM."
+      text: "Select Markdown notes, choose a prompt preset, and send them to the model."
     });
     const optionsSection = contentEl.createEl("details", {
       cls: "vault-ai-summarizer-collapsible vault-ai-summarizer-options-section"
@@ -1960,7 +1960,6 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
     this.modelRefreshers = {};
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian.Setting(containerEl).setName("Laibrarian").setHeading();
     this.section("General", "Settings shared across all providers.");
     new import_obsidian.Setting(containerEl).setName("Output folder for vault summaries").setDesc("Folder where multi-file outputs are written.").addText(
       (text) => text.setPlaceholder("AI summaries").setValue(this.plugin.settings.outputFolder).onChange(async (value) => {

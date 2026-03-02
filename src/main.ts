@@ -1349,7 +1349,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
       const llmOutput = await this.requestCompletion(preset.prompt, userPrompt, provider);
 
       if (!llmOutput.trim()) {
-        new Notice("The LLM returned an empty response.");
+        new Notice("The model returned an empty response.");
         return;
       }
 
@@ -1909,7 +1909,7 @@ class VaultFileSelectionModal extends Modal {
     contentEl.createEl("h2", { text: "Summarize selected notes" });
     contentEl.createEl("p", {
       cls: "vault-ai-summarizer-intro",
-      text: "Select Markdown notes from across your vault, choose a prompt preset, then send them to the LLM.",
+      text: "Select Markdown notes, choose a prompt preset, and send them to the model.",
     });
 
     const optionsSection = contentEl.createEl("details", {
@@ -2537,8 +2537,6 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
 
     const { containerEl } = this;
     containerEl.empty();
-
-    new Setting(containerEl).setName("Laibrarian").setHeading();
 
     this.section("General", "Settings shared across all providers.");
 
