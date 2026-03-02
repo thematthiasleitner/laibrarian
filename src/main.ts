@@ -429,7 +429,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
 
     this.addCommand({
       id: "summarize-selected-notes",
-      name: "Summarize selected markdown notes",
+      name: "Summarize selected Markdown notes",
       callback: async () => {
         await this.runVaultSummaryFlow();
       },
@@ -441,8 +441,8 @@ export default class VaultAiSummarizerPlugin extends Plugin {
       checkCallback: (checking: boolean) => {
         const file = this.app.workspace.getActiveFile();
         const canRun = Boolean(file && file.extension === "md");
-        if (canRun && !checking) {
-          void this.runActiveFileFlow(file as TFile);
+        if (canRun && !checking && file instanceof TFile) {
+          void this.runActiveFileFlow(file);
         }
         return canRun;
       },
@@ -756,7 +756,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
   }
 
   private normalizeProviderId(value: unknown): ProviderId {
-    const candidate = String(value ?? "");
+    const candidate = typeof value === "string" ? value : "";
     if ((PROVIDER_IDS as string[]).includes(candidate)) {
       return candidate as ProviderId;
     }
@@ -766,7 +766,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
   private migrateLegacyProviderConnectionSettings(
     candidate: Partial<VaultAiSummarizerSettings> & Record<string, unknown>,
   ): void {
-    const hasOwn = (key: keyof VaultAiSummarizerSettings | string): boolean =>
+    const hasOwn = (key: keyof VaultAiSummarizerSettings): boolean =>
       Object.prototype.hasOwnProperty.call(candidate, key);
 
     const legacyConnections =
@@ -942,7 +942,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     if (!apiKey) {
       throw new Error("Gemini API key is required.");
     }
-    if (!apiKey.startsWith("AIza") || /[\s\[\]]/.test(apiKey)) {
+    if (!apiKey.startsWith("AIza") || /[\s[\]]/.test(apiKey)) {
       throw new Error("Gemini API key looks invalid. Paste the raw AI Studio key (usually starts with AIza).");
     }
     if (!model) {
@@ -1259,7 +1259,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
       .sort((a, b) => a.path.localeCompare(b.path, undefined, { sensitivity: "base" }));
 
     if (markdownFiles.length === 0) {
-      new Notice("No markdown files found in this vault.");
+      new Notice("No Markdown files found in this vault.");
       return;
     }
 
@@ -1349,7 +1349,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
       const llmOutput = await this.requestCompletion(preset.prompt, userPrompt, provider);
 
       if (!llmOutput.trim()) {
-        new Notice("LLM returned an empty response.");
+        new Notice("The LLM returned an empty response.");
         return;
       }
 
@@ -1564,9 +1564,14 @@ export default class VaultAiSummarizerPlugin extends Plugin {
   }
 
   private extractTextFromResponse(payload: unknown): string | null {
-    const json = payload as any;
-    const choice = json?.choices?.[0];
-    const content = choice?.message?.content ?? choice?.text ?? json?.output_text ?? json?.content;
+    const asRecord = (v: unknown): Record<string, unknown> | null =>
+      typeof v === "object" && v !== null ? (v as Record<string, unknown>) : null;
+    const json = asRecord(payload);
+    if (!json) return null;
+    const choices = Array.isArray(json.choices) ? json.choices : [];
+    const choice = asRecord(choices[0]);
+    const message = asRecord(choice?.message);
+    const content = message?.content ?? choice?.text ?? json.output_text ?? json.content;
 
     if (typeof content === "string") {
       return content;
@@ -1577,7 +1582,8 @@ export default class VaultAiSummarizerPlugin extends Plugin {
         .map((item) => {
           if (!item) return "";
           if (typeof item === "string") return item;
-          if (typeof item?.text === "string") return item.text;
+          const rec = asRecord(item);
+          if (rec && typeof rec.text === "string") return rec.text;
           return "";
         })
         .filter(Boolean);
@@ -1679,7 +1685,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     const outputFolder = await this.ensureFolder(this.settings.outputFolder || DEFAULT_SETTINGS.outputFolder);
     const createdAt = new Date();
     const baseName = this.buildVaultOutputFileBaseName(preset, createdAt, context);
-    const filePath = await this.createUniqueFilePath(
+    const filePath = this.createUniqueFilePath(
       normalizePath(`${outputFolder}/${baseName}.md`),
     );
 
@@ -1717,7 +1723,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
   ): Promise<string> {
     const folder = file.parent?.path ?? "";
     const base = `${file.basename} - ${slugify(preset.suffix)}`;
-    const targetPath = await this.createUniqueFilePath(
+    const targetPath = this.createUniqueFilePath(
       normalizePath(`${folder ? `${folder}/` : ""}${base}.md`),
     );
 
@@ -1756,14 +1762,14 @@ export default class VaultAiSummarizerPlugin extends Plugin {
       if (!existing) {
         await this.app.vault.createFolder(currentPath);
       } else if (!(existing instanceof TFolder)) {
-        throw new Error(`Cannot create folder \"${normalized}\" because \"${currentPath}\" is a file.`);
+        throw new Error(`Cannot create folder "${normalized}" because "${currentPath}" is a file.`);
       }
     }
 
     return normalized;
   }
 
-  private async createUniqueFilePath(initialPath: string): Promise<string> {
+  private createUniqueFilePath(initialPath: string): string {
     if (!this.app.vault.getAbstractFileByPath(initialPath)) {
       return initialPath;
     }
@@ -1903,7 +1909,7 @@ class VaultFileSelectionModal extends Modal {
     contentEl.createEl("h2", { text: "Summarize selected notes" });
     contentEl.createEl("p", {
       cls: "vault-ai-summarizer-intro",
-      text: "Select markdown notes from across your vault, choose a prompt preset, then send them to the LLM.",
+      text: "Select Markdown notes from across your vault, choose a prompt preset, then send them to the LLM.",
     });
 
     const optionsSection = contentEl.createEl("details", {
@@ -2424,9 +2430,9 @@ class LaunchActionSuggestModal extends SuggestModal<LaunchActionOption> {
     this.setPlaceholder("Choose what to summarize...");
   }
 
-  onOpen(): void {
-    super.onOpen();
-    this.titleEl.setText("laibrarian");
+  async onOpen(): Promise<void> {
+    await super.onOpen();
+    this.titleEl.setText("Laibrarian");
   }
 
   onClose(): void {
@@ -2479,8 +2485,8 @@ class PromptPresetSuggestModal extends SuggestModal<PromptPreset> {
     this.setPlaceholder("Choose a prompt preset...");
   }
 
-  onOpen(): void {
-    super.onOpen();
+  async onOpen(): Promise<void> {
+    await super.onOpen();
     this.titleEl.setText(this.modalTitle);
   }
 
@@ -2532,7 +2538,7 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "laibrarian settings" });
+    new Setting(containerEl).setName("Laibrarian").setHeading();
 
     this.section("General", "Settings shared across all providers.");
 
@@ -2541,7 +2547,7 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
       .setDesc("Folder where multi-file outputs are written.")
       .addText((text) =>
         text
-          .setPlaceholder("AI Summaries")
+          .setPlaceholder("AI summaries")
           .setValue(this.plugin.settings.outputFolder)
           .onChange(async (value) => {
             this.plugin.settings.outputFolder = value.trim() || DEFAULT_SETTINGS.outputFolder;
@@ -2676,7 +2682,7 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
     const cardEl = containerEl.createDiv({ cls: "vault-ai-summarizer-preset-card" });
     const headerEl = cardEl.createDiv({ cls: "vault-ai-summarizer-preset-card-header" });
     const titleWrapEl = headerEl.createDiv({ cls: "vault-ai-summarizer-preset-card-title-wrap" });
-    titleWrapEl.createEl("h4", {
+    titleWrapEl.createEl("div", {
       cls: "vault-ai-summarizer-preset-card-title",
       text: preset.name,
     });

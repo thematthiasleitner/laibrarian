@@ -266,7 +266,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     });
     this.addCommand({
       id: "summarize-selected-notes",
-      name: "Summarize selected markdown notes",
+      name: "Summarize selected Markdown notes",
       callback: async () => {
         await this.runVaultSummaryFlow();
       }
@@ -277,7 +277,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         const canRun = Boolean(file && file.extension === "md");
-        if (canRun && !checking) {
+        if (canRun && !checking && file instanceof import_obsidian.TFile) {
           void this.runActiveFileFlow(file);
         }
         return canRun;
@@ -535,7 +535,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     });
   }
   normalizeProviderId(value) {
-    const candidate = String(value != null ? value : "");
+    const candidate = typeof value === "string" ? value : "";
     if (PROVIDER_IDS.includes(candidate)) {
       return candidate;
     }
@@ -677,7 +677,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     if (!apiKey) {
       throw new Error("Gemini API key is required.");
     }
-    if (!apiKey.startsWith("AIza") || /[\s\[\]]/.test(apiKey)) {
+    if (!apiKey.startsWith("AIza") || /[\s[\]]/.test(apiKey)) {
       throw new Error("Gemini API key looks invalid. Paste the raw AI Studio key (usually starts with AIza).");
     }
     if (!model) {
@@ -949,7 +949,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
     }
     const markdownFiles = this.app.vault.getMarkdownFiles().sort((a, b) => a.path.localeCompare(b.path, void 0, { sensitivity: "base" }));
     if (markdownFiles.length === 0) {
-      new import_obsidian.Notice("No markdown files found in this vault.");
+      new import_obsidian.Notice("No Markdown files found in this vault.");
       return;
     }
     const selection = await this.openFileSelectionModal(markdownFiles);
@@ -1019,7 +1019,7 @@ var VaultAiSummarizerPlugin = class extends import_obsidian.Plugin {
       const userPrompt = this.buildUserPrompt(files, mode, filePayload);
       const llmOutput = await this.requestCompletion(preset.prompt, userPrompt, provider);
       if (!llmOutput.trim()) {
-        new import_obsidian.Notice("LLM returned an empty response.");
+        new import_obsidian.Notice("The LLM returned an empty response.");
         return;
       }
       if (mode === "vault") {
@@ -1191,10 +1191,14 @@ ${rawContent}
     return headers;
   }
   extractTextFromResponse(payload) {
-    var _a, _b, _c, _d, _e;
-    const json = payload;
-    const choice = (_a = json == null ? void 0 : json.choices) == null ? void 0 : _a[0];
-    const content = (_e = (_d = (_c = (_b = choice == null ? void 0 : choice.message) == null ? void 0 : _b.content) != null ? _c : choice == null ? void 0 : choice.text) != null ? _d : json == null ? void 0 : json.output_text) != null ? _e : json == null ? void 0 : json.content;
+    var _a, _b, _c;
+    const asRecord = (v) => typeof v === "object" && v !== null ? v : null;
+    const json = asRecord(payload);
+    if (!json) return null;
+    const choices = Array.isArray(json.choices) ? json.choices : [];
+    const choice = asRecord(choices[0]);
+    const message = asRecord(choice == null ? void 0 : choice.message);
+    const content = (_c = (_b = (_a = message == null ? void 0 : message.content) != null ? _a : choice == null ? void 0 : choice.text) != null ? _b : json.output_text) != null ? _c : json.content;
     if (typeof content === "string") {
       return content;
     }
@@ -1202,7 +1206,8 @@ ${rawContent}
       const parts = content.map((item) => {
         if (!item) return "";
         if (typeof item === "string") return item;
-        if (typeof (item == null ? void 0 : item.text) === "string") return item.text;
+        const rec = asRecord(item);
+        if (rec && typeof rec.text === "string") return rec.text;
         return "";
       }).filter(Boolean);
       return parts.join("\n");
@@ -1275,7 +1280,7 @@ ${rawContent}
     const outputFolder = await this.ensureFolder(this.settings.outputFolder || DEFAULT_SETTINGS.outputFolder);
     const createdAt = /* @__PURE__ */ new Date();
     const baseName = this.buildVaultOutputFileBaseName(preset, createdAt, context);
-    const filePath = await this.createUniqueFilePath(
+    const filePath = this.createUniqueFilePath(
       (0, import_obsidian.normalizePath)(`${outputFolder}/${baseName}.md`)
     );
     const sourceList = files.map((file) => `- [[${file.path}]]`).join("\n");
@@ -1306,7 +1311,7 @@ ${rawContent}
     var _a, _b;
     const folder = (_b = (_a = file.parent) == null ? void 0 : _a.path) != null ? _b : "";
     const base = `${file.basename} - ${slugify(preset.suffix)}`;
-    const targetPath = await this.createUniqueFilePath(
+    const targetPath = this.createUniqueFilePath(
       (0, import_obsidian.normalizePath)(`${folder ? `${folder}/` : ""}${base}.md`)
     );
     const content = [
@@ -1345,7 +1350,7 @@ ${rawContent}
     }
     return normalized;
   }
-  async createUniqueFilePath(initialPath) {
+  createUniqueFilePath(initialPath) {
     if (!this.app.vault.getAbstractFileByPath(initialPath)) {
       return initialPath;
     }
@@ -1440,7 +1445,7 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
     contentEl.createEl("h2", { text: "Summarize selected notes" });
     contentEl.createEl("p", {
       cls: "vault-ai-summarizer-intro",
-      text: "Select markdown notes from across your vault, choose a prompt preset, then send them to the LLM."
+      text: "Select Markdown notes from across your vault, choose a prompt preset, then send them to the LLM."
     });
     const optionsSection = contentEl.createEl("details", {
       cls: "vault-ai-summarizer-collapsible vault-ai-summarizer-options-section"
@@ -1874,9 +1879,9 @@ var LaunchActionSuggestModal = class extends import_obsidian.SuggestModal {
     this.onSelectAction = onSelectAction;
     this.setPlaceholder("Choose what to summarize...");
   }
-  onOpen() {
-    super.onOpen();
-    this.titleEl.setText("laibrarian");
+  async onOpen() {
+    await super.onOpen();
+    this.titleEl.setText("Laibrarian");
   }
   onClose() {
     super.onClose();
@@ -1913,8 +1918,8 @@ var PromptPresetSuggestModal = class extends import_obsidian.SuggestModal {
     this.onSelectPreset = onSelectPreset;
     this.setPlaceholder("Choose a prompt preset...");
   }
-  onOpen() {
-    super.onOpen();
+  async onOpen() {
+    await super.onOpen();
     this.titleEl.setText(this.modalTitle);
   }
   onClose() {
@@ -1955,10 +1960,10 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
     this.modelRefreshers = {};
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "laibrarian settings" });
+    new import_obsidian.Setting(containerEl).setName("Laibrarian").setHeading();
     this.section("General", "Settings shared across all providers.");
     new import_obsidian.Setting(containerEl).setName("Output folder for vault summaries").setDesc("Folder where multi-file outputs are written.").addText(
-      (text) => text.setPlaceholder("AI Summaries").setValue(this.plugin.settings.outputFolder).onChange(async (value) => {
+      (text) => text.setPlaceholder("AI summaries").setValue(this.plugin.settings.outputFolder).onChange(async (value) => {
         this.plugin.settings.outputFolder = value.trim() || DEFAULT_SETTINGS.outputFolder;
         await this.plugin.saveSettings();
       })
@@ -2046,7 +2051,7 @@ var VaultAiSummarizerSettingTab = class extends import_obsidian.PluginSettingTab
     const cardEl = containerEl.createDiv({ cls: "vault-ai-summarizer-preset-card" });
     const headerEl = cardEl.createDiv({ cls: "vault-ai-summarizer-preset-card-header" });
     const titleWrapEl = headerEl.createDiv({ cls: "vault-ai-summarizer-preset-card-title-wrap" });
-    titleWrapEl.createEl("h4", {
+    titleWrapEl.createEl("div", {
       cls: "vault-ai-summarizer-preset-card-title",
       text: preset.name
     });
