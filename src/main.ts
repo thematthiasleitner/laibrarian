@@ -8,9 +8,12 @@ import {
   SuggestModal,
   TFile,
   TFolder,
+  arrayBufferToBase64,
   normalizePath,
   requestUrl,
 } from "obsidian";
+import * as pdfjsLib from "pdfjs-dist";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "";
 
 type ProviderId =
   | "openai"
@@ -46,6 +49,7 @@ interface PromptPreset {
   name: string;
   suffix: string;
   prompt: string;
+  generateTitle?: boolean;
 }
 
 interface VaultAiSummarizerSettings {
@@ -97,6 +101,7 @@ interface VaultSelectionResult {
   presetId: string;
   timeFilterWindow?: string | null;
   searchString?: string | null;
+  temperatureOverride?: number | null;
 }
 
 type LaunchMode = "active" | "vault";
@@ -126,6 +131,12 @@ interface GenerationContext {
   timeFilterWindow?: string | null;
   searchString?: string | null;
 }
+
+type OpenAiImagePart = { type: "image_url"; image_url: { url: string } };
+type AnthropicImagePart = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+type TextPart = { type: "text"; text: string };
+type MessageContentPart = TextPart | OpenAiImagePart | AnthropicImagePart;
+type UserContent = string | MessageContentPart[];
 
 type DateFieldFilter = "created" | "modified";
 type RelativeDateUnit = "hour" | "day" | "month" | "year";
@@ -1254,12 +1265,15 @@ export default class VaultAiSummarizerPlugin extends Plugin {
       return;
     }
 
+    const TEXT_EXTENSIONS = new Set(["md", "pdf"]);
+    const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg"]);
     const markdownFiles = this.app.vault
-      .getMarkdownFiles()
+      .getFiles()
+      .filter((f) => TEXT_EXTENSIONS.has(f.extension) || IMAGE_EXTENSIONS.has(f.extension))
       .sort((a, b) => a.path.localeCompare(b.path, undefined, { sensitivity: "base" }));
 
     if (markdownFiles.length === 0) {
-      new Notice("No Markdown files found in this vault.");
+      new Notice("No supported files found in this vault.");
       return;
     }
 
@@ -1271,7 +1285,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     await this.generateFromFiles(selection.files, selection.presetId, "vault", {
       timeFilterWindow: selection.timeFilterWindow ?? null,
       searchString: selection.searchString ?? null,
-    });
+    }, selection.temperatureOverride ?? null);
   }
 
   private async runActiveFileFlow(activeFile: TFile): Promise<void> {
@@ -1310,6 +1324,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
         files,
         this.settings.promptPresets,
         this.settings.defaultPresetId,
+        this.settings.temperature,
         (selection) => resolve(selection),
       );
       modal.open();
@@ -1330,6 +1345,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     presetId: string,
     mode: "vault" | "active",
     context: GenerationContext = {},
+    temperatureOverride: number | null = null,
   ): Promise<void> {
     const preset = this.getPresetById(presetId);
     if (!preset) {
@@ -1344,20 +1360,29 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     );
 
     try {
-      const filePayload = await this.buildFilePayload(files);
-      const userPrompt = this.buildUserPrompt(files, mode, filePayload);
-      const llmOutput = await this.requestCompletion(preset.prompt, userPrompt, provider);
+      const systemPrompt = this.buildSystemPrompt(preset);
+      const isAnthropic = provider.id === "anthropic";
+      const userContent = await this.buildUserContent(files, mode, isAnthropic);
+      const llmOutput = await this.requestCompletion(systemPrompt, userContent, provider, temperatureOverride);
 
       if (!llmOutput.trim()) {
         new Notice("The model returned an empty response.");
         return;
       }
 
+      let generatedTitle: string | undefined;
+      let outputBody = llmOutput;
+      if (preset.generateTitle) {
+        const extracted = this.extractTitleFromOutput(llmOutput);
+        generatedTitle = extracted.title || undefined;
+        outputBody = extracted.body;
+      }
+
       if (mode === "vault") {
-        const createdPath = await this.writeVaultSummaryFile(files, preset, llmOutput, provider, context);
+        const createdPath = await this.writeVaultSummaryFile(files, preset, outputBody, provider, context, generatedTitle);
         new Notice(`Summary created: ${createdPath}`);
       } else {
-        const createdPath = await this.writeActiveFileResult(files[0], preset, llmOutput, provider);
+        const createdPath = await this.writeActiveFileResult(files[0], preset, outputBody, provider, generatedTitle);
         new Notice(`Result created: ${createdPath}`);
       }
     } catch (error) {
@@ -1367,11 +1392,65 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     }
   }
 
+  private async readFileText(file: TFile): Promise<string> {
+    if (file.extension !== "pdf") {
+      return this.app.vault.cachedRead(file);
+    }
+    const buffer = await this.app.vault.readBinary(file);
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      pages.push(
+        textContent.items
+          .map((item) => ("str" in item ? (item as { str: string }).str : ""))
+          .join(" "),
+      );
+    }
+    return pages.join("\n\n");
+  }
+
+  private async buildUserContent(
+    files: TFile[],
+    mode: "vault" | "active",
+    isAnthropic: boolean,
+  ): Promise<UserContent> {
+    const IMAGE_EXTS = new Set(["png", "jpg", "jpeg"]);
+    const textFiles = files.filter((f) => !IMAGE_EXTS.has(f.extension));
+    const imageFiles = files.filter((f) => IMAGE_EXTS.has(f.extension));
+
+    const sections: string[] = [];
+    for (const file of textFiles) {
+      const rawContent = await this.readFileText(file);
+      sections.push(`<file path="${file.path}">\n${rawContent}\n</file>`);
+    }
+    const textPayload = sections.join("\n\n");
+    const userPromptText = this.buildUserPrompt(textFiles, mode, textPayload);
+
+    if (!imageFiles.length) return userPromptText;
+
+    const parts: MessageContentPart[] = [{ type: "text", text: userPromptText }];
+    for (const img of imageFiles) {
+      const bytes = await this.app.vault.readBinary(img);
+      const b64 = arrayBufferToBase64(bytes);
+      const mime = img.extension === "png" ? "image/png" : "image/jpeg";
+      if (isAnthropic) {
+        parts.push({ type: "image", source: { type: "base64", media_type: mime, data: b64 } });
+      } else {
+        parts.push({ type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } });
+      }
+      parts.push({ type: "text", text: `[Image file: ${img.path}]` });
+    }
+    return parts;
+  }
+
   private async buildFilePayload(files: TFile[]): Promise<string> {
+    const textFiles = files.filter((f) => f.extension === "md" || f.extension === "pdf");
     const sections: string[] = [];
 
-    for (const file of files) {
-      const rawContent = await this.app.vault.cachedRead(file);
+    for (const file of textFiles) {
+      const rawContent = await this.readFileText(file);
       sections.push(`<file path="${file.path}">\n${rawContent}\n</file>`);
     }
 
@@ -1399,22 +1478,39 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     ].join("\n");
   }
 
+  private buildSystemPrompt(preset: PromptPreset): string {
+    if (!preset.generateTitle) return preset.prompt;
+    return [
+      preset.prompt,
+      "",
+      "Output format: Write a concise title on the very first line (plain text, no \"#\" prefix, no blank line before it). The rest of your response starts on the second line.",
+    ].join("\n");
+  }
+
+  private extractTitleFromOutput(raw: string): { title: string; body: string } {
+    const lines = raw.trimStart().split("\n");
+    const title = lines[0].replace(/^#+\s*/, "").trim();
+    const body = lines.slice(1).join("\n").trimStart();
+    return { title, body };
+  }
+
   private async requestCompletion(
     systemPrompt: string,
-    userPrompt: string,
+    userContent: UserContent,
     provider: ResolvedProvider,
+    temperatureOverride: number | null = null,
   ): Promise<string> {
     if (provider.id === "anthropic") {
-      return await this.requestAnthropicCompletion(systemPrompt, userPrompt, provider);
+      return await this.requestAnthropicCompletion(systemPrompt, userContent, provider, temperatureOverride);
     }
 
     const endpoint = this.buildChatCompletionsEndpoint(provider.baseUrl);
     const headers = this.buildAuthHeaders(provider.authHeader, provider.apiKey);
     const body: Record<string, unknown> = {
-      temperature: this.settings.temperature,
+      temperature: temperatureOverride ?? this.settings.temperature,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+        { role: "user", content: userContent },
       ],
     };
 
@@ -1461,8 +1557,9 @@ export default class VaultAiSummarizerPlugin extends Plugin {
 
   private async requestAnthropicCompletion(
     systemPrompt: string,
-    userPrompt: string,
+    userContent: UserContent,
     provider: ResolvedProvider,
+    temperatureOverride: number | null = null,
   ): Promise<string> {
     const endpoint = this.buildAnthropicMessagesEndpoint(provider.baseUrl);
     const headers = this.buildAuthHeaders(provider.authHeader, provider.apiKey);
@@ -1471,8 +1568,8 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     const body: Record<string, unknown> = {
       model: provider.model.trim(),
       max_tokens: 4096,
-      temperature: this.settings.temperature,
-      messages: [{ role: "user", content: userPrompt }],
+      temperature: temperatureOverride ?? this.settings.temperature,
+      messages: [{ role: "user", content: userContent }],
     };
     if (systemPrompt.trim()) {
       body.system = systemPrompt;
@@ -1681,6 +1778,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     llmOutput: string,
     provider: ResolvedProvider,
     context: GenerationContext = {},
+    generatedTitle?: string,
   ): Promise<string> {
     const outputFolder = await this.ensureFolder(this.settings.outputFolder || DEFAULT_SETTINGS.outputFolder);
     const createdAt = new Date();
@@ -1698,7 +1796,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
       ...(context.searchString ? [`Search string: ${context.searchString}`] : []),
     ];
     const content = [
-      `# ${preset.name}`,
+      `# ${generatedTitle ?? preset.name}`,
       "",
       llmOutput.trim(),
       "",
@@ -1720,6 +1818,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     preset: PromptPreset,
     llmOutput: string,
     provider: ResolvedProvider,
+    generatedTitle?: string,
   ): Promise<string> {
     const folder = file.parent?.path ?? "";
     const base = `${file.basename} - ${slugify(preset.suffix)}`;
@@ -1728,7 +1827,7 @@ export default class VaultAiSummarizerPlugin extends Plugin {
     );
 
     const content = [
-      `# ${file.basename} (${preset.name})`,
+      `# ${generatedTitle ?? `${file.basename} (${preset.name})`}`,
       "",
       llmOutput.trim(),
       "",
@@ -1879,6 +1978,10 @@ class VaultFileSelectionModal extends Modal {
   private dateFieldFilter: DateFieldFilter = "created";
   private relativeDateAmountInput = "";
   private relativeDateUnit: RelativeDateUnit = "day";
+  private dateFilterMode: "relative" | "absolute" = "relative";
+  private absoluteStartDate = "";
+  private temperatureOverride: number | null = null;
+  private readonly defaultTemperature: number;
   private countEl: HTMLElement | null = null;
   private listEl: HTMLElement | null = null;
   private settled = false;
@@ -1890,12 +1993,15 @@ class VaultFileSelectionModal extends Modal {
     files: TFile[],
     presets: PromptPreset[],
     defaultPresetId: string,
+    defaultTemperature: number,
     onSubmit: (selection: VaultSelectionResult | null) => void,
   ) {
     super(app);
     this.allFiles = files;
     this.presets = presets;
     this.onSubmit = onSubmit;
+    this.defaultTemperature = defaultTemperature;
+    this.temperatureOverride = defaultTemperature;
     this.selectedPaths = new Set();
     this.selectedPresetId =
       presets.find((preset) => preset.id === defaultPresetId)?.id ?? (presets[0]?.id ?? "");
@@ -1942,6 +2048,18 @@ class VaultFileSelectionModal extends Modal {
       this.selectedPresetId = presetSelect.value;
     };
 
+    const tempRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row vault-ai-summarizer-temp-row" });
+    tempRow.createSpan({ text: "Temperature" });
+    const tempInput = tempRow.createEl("input", { type: "number" });
+    tempInput.min = "0";
+    tempInput.max = "2";
+    tempInput.step = "0.1";
+    tempInput.value = String(this.defaultTemperature);
+    tempInput.oninput = () => {
+      const v = parseFloat(tempInput.value);
+      this.temperatureOverride = isNaN(v) ? null : Math.min(2, Math.max(0, v));
+    };
+
     const dateCard = controlsPanel.createDiv({ cls: "vault-ai-summarizer-filter-card" });
     const dateCardHeader = dateCard.createDiv({ cls: "vault-ai-summarizer-filter-card-header" });
     dateCardHeader.createSpan({ text: "Time filter" });
@@ -1955,7 +2073,26 @@ class VaultFileSelectionModal extends Modal {
     toggleLabel.createSpan({ text: "Enable" });
 
     const dateControls = dateCard.createDiv({ cls: "vault-ai-summarizer-filter-controls" });
-    const dateMainRow = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
+
+    // Mode selector: relative vs absolute date
+    const modeRow = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-mode-row" });
+    const relLabel = modeRow.createEl("label", { cls: "vault-ai-summarizer-filter-mode-label" });
+    const relRadio = relLabel.createEl("input", { type: "radio" });
+    relRadio.name = "dateFilterMode";
+    relRadio.value = "relative";
+    relRadio.checked = this.dateFilterMode === "relative";
+    relLabel.createSpan({ text: "Within last…" });
+
+    const absLabel = modeRow.createEl("label", { cls: "vault-ai-summarizer-filter-mode-label" });
+    const absRadio = absLabel.createEl("input", { type: "radio" });
+    absRadio.name = "dateFilterMode";
+    absRadio.value = "absolute";
+    absRadio.checked = this.dateFilterMode === "absolute";
+    absLabel.createSpan({ text: "Since date" });
+
+    // Relative controls
+    const relativeControlsDiv = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-relative-controls" });
+    const dateMainRow = relativeControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
 
     const fieldSelect = dateMainRow.createEl("select", {
       cls: "vault-ai-summarizer-filter-select vault-ai-summarizer-filter-select-field",
@@ -2001,11 +2138,53 @@ class VaultFileSelectionModal extends Modal {
       this.renderFileTree();
     };
 
+    // Absolute date controls
+    const absoluteControlsDiv = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-absolute-controls" });
+    const absDateRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
+
+    const absFieldSelect = absDateRow.createEl("select", {
+      cls: "vault-ai-summarizer-filter-select vault-ai-summarizer-filter-select-field",
+    });
+    DATE_FIELD_FILTER_OPTIONS.forEach((option) => {
+      const el = absFieldSelect.createEl("option", { text: option.label, value: option.id });
+      el.selected = option.id === this.dateFieldFilter;
+    });
+    absFieldSelect.onchange = () => {
+      this.dateFieldFilter = absFieldSelect.value as DateFieldFilter;
+      this.renderFileTree();
+    };
+
+    absDateRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "since" });
+
+    const datePicker = absDateRow.createEl("input", { type: "date" });
+    datePicker.value = this.absoluteStartDate;
+    datePicker.oninput = () => {
+      this.absoluteStartDate = datePicker.value;
+      this.renderFileTree();
+    };
+
+    const syncDateModeUi = (): void => {
+      relativeControlsDiv.style.display = this.dateFilterMode === "relative" ? "" : "none";
+      absoluteControlsDiv.style.display = this.dateFilterMode === "absolute" ? "" : "none";
+    };
+
+    relRadio.onchange = absRadio.onchange = () => {
+      this.dateFilterMode = relRadio.checked ? "relative" : "absolute";
+      syncDateModeUi();
+      this.renderFileTree();
+    };
+
+    syncDateModeUi();
+
     const syncTimeFilterUi = (): void => {
       const isEnabled = this.relativeDateFilterEnabled;
       fieldSelect.disabled = !isEnabled;
       amountInput.disabled = !isEnabled;
       unitSelect.disabled = !isEnabled;
+      absFieldSelect.disabled = !isEnabled;
+      datePicker.disabled = !isEnabled;
+      relRadio.disabled = !isEnabled;
+      absRadio.disabled = !isEnabled;
       dateControls.classList.toggle("is-disabled", !isEnabled);
     };
 
@@ -2089,6 +2268,7 @@ class VaultFileSelectionModal extends Modal {
         presetId: this.selectedPresetId,
         timeFilterWindow: this.getSelectedTimeFilterWindowForMetadata(),
         searchString: this.getSelectedSearchStringForMetadata(),
+        temperatureOverride: this.temperatureOverride,
       });
     };
   }
@@ -2332,6 +2512,16 @@ class VaultFileSelectionModal extends Modal {
   }
 
   private matchesRelativeDateFilter(file: TFile): boolean {
+    if (!this.relativeDateFilterEnabled) return true;
+
+    if (this.dateFilterMode === "absolute") {
+      if (!this.absoluteStartDate) return true;
+      const threshold = new Date(this.absoluteStartDate).getTime();
+      if (!Number.isFinite(threshold)) return true;
+      const ts = this.dateFieldFilter === "created" ? (file.stat?.ctime ?? 0) : (file.stat?.mtime ?? 0);
+      return ts >= threshold;
+    }
+
     const filter = this.getRelativeDateFilter();
     if (!filter) {
       return true;
@@ -2370,6 +2560,14 @@ class VaultFileSelectionModal extends Modal {
   }
 
   private describeRelativeDateFilter(): string {
+    if (!this.relativeDateFilterEnabled) return "off";
+
+    if (this.dateFilterMode === "absolute") {
+      if (!this.absoluteStartDate) return "off";
+      const fieldLabel = this.dateFieldFilter === "created" ? "created" : "modified";
+      return `${fieldLabel} since ${this.absoluteStartDate}`;
+    }
+
     const filter = this.getRelativeDateFilter();
     if (!filter) {
       return "off";
@@ -2381,10 +2579,8 @@ class VaultFileSelectionModal extends Modal {
   }
 
   private getSelectedTimeFilterWindowForMetadata(): string | null {
-    if (!this.getRelativeDateFilter()) {
-      return null;
-    }
-    return this.describeRelativeDateFilter();
+    const description = this.describeRelativeDateFilter();
+    return description === "off" ? null : description;
   }
 
   private getSelectedSearchStringForMetadata(): string | null {
@@ -2751,6 +2947,16 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+
+    new Setting(bodyEl)
+      .setName("Generate title from model")
+      .setDesc("When enabled, the model writes a title on its first output line, which is used as the note heading.")
+      .addToggle((toggle) =>
+        toggle.setValue(preset.generateTitle ?? false).onChange(async (value) => {
+          preset.generateTitle = value;
+          await this.plugin.saveSettings();
+        }),
+      );
   }
 
   private renderOutputFilenameBuilder(containerEl: HTMLElement): void {
