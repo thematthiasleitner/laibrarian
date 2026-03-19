@@ -28640,7 +28640,7 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
       this.renderFileTree();
     };
     syncTimeFilterUi();
-    const searchRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row" });
+    const searchRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row vault-ai-summarizer-search-row" });
     const searchInput = searchRow.createEl("input", {
       cls: "vault-ai-summarizer-search-input",
       type: "search",
