@@ -98,18 +98,21 @@
 }
 
 .vault-ai-summarizer-preset-row,
-.vault-ai-summarizer-search-row {
+.vault-ai-summarizer-search-row,
+.vault-ai-summarizer-temp-row {
   display: grid;
   grid-template-columns: 5.6rem minmax(0, 1fr);
-  align-items: center;
+  align-items: start;
   gap: 0.55rem;
 }
 
 .vault-ai-summarizer-preset-row > span,
-.vault-ai-summarizer-search-row > span {
+.vault-ai-summarizer-search-row > span,
+.vault-ai-summarizer-temp-row > span {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   min-width: 0;
+  padding-top: 0.2rem;
 }
 
 .vault-ai-summarizer-preset-row > select {
@@ -123,13 +126,11 @@
 }
 
 .vault-ai-summarizer-filter-card {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 10px;
-  background: var(--background-primary-alt, var(--background-primary));
-  padding: 0.6rem 0.7rem;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 0.5rem;
 }
 
 .vault-ai-summarizer-filter-card-header {
@@ -192,8 +193,13 @@
   flex: 0 0 auto;
 }
 
+.vault-ai-summarizer-search-row,
 .vault-ai-summarizer-action-row {
-  padding-top: 0.15rem;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 0.5rem;
+}
+
+.vault-ai-summarizer-action-row {
   gap: 0.45rem;
   align-items: stretch;
   justify-content: center;
@@ -553,7 +559,8 @@
   }
 
   .vault-ai-summarizer-preset-row,
-  .vault-ai-summarizer-search-row {
+  .vault-ai-summarizer-search-row,
+  .vault-ai-summarizer-temp-row {
     grid-template-columns: 4.8rem minmax(0, 1fr);
     gap: 0.45rem;
   }
@@ -580,9 +587,13 @@
     align-items: stretch;
   }
 
-  .vault-ai-summarizer-action-row button {
+  .vault-ai-summarizer-action-row > button {
     width: 100%;
     text-align: center;
+  }
+
+  .vault-ai-summarizer-fold-btns {
+    width: 100%;
   }
 
   .vault-ai-summarizer-files {
@@ -668,4 +679,60 @@
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   line-height: 1.35;
+}
+
+/* Segmented mode toggle (Within last / Date range) */
+.vault-ai-summarizer-filter-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.vault-ai-summarizer-filter-mode-btn {
+  padding: 0.2rem 0.75rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+.vault-ai-summarizer-filter-mode-btn + .vault-ai-summarizer-filter-mode-btn {
+  border-left: 1px solid var(--background-modifier-border);
+}
+
+.vault-ai-summarizer-filter-mode-btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.vault-ai-summarizer-filter-controls.is-disabled .vault-ai-summarizer-filter-mode-btn {
+  pointer-events: none;
+}
+
+/* From / To pickers on the same row */
+.vault-ai-summarizer-filter-range-row {
+  flex-wrap: wrap;
+}
+
+.vault-ai-summarizer-filter-range-row input[type="date"] {
+  flex: 1;
+  min-width: 7rem;
+}
+
+/* Expand / Collapse always side by side */
+.vault-ai-summarizer-fold-btns {
+  display: flex;
+  gap: 0.45rem;
+  flex: 1;
+}
+
+.vault-ai-summarizer-fold-btns button {
+  flex: 1;
+  white-space: nowrap;
+  border-radius: 8px;
 }

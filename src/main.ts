@@ -2039,10 +2039,6 @@ class VaultFileSelectionModal extends Modal {
       cls: "vault-ai-summarizer-collapsible-summary-label",
       text: "Options & filters",
     });
-    optionsSummaryRow.createSpan({
-      cls: "vault-ai-summarizer-collapsible-summary-value",
-      text: "Prompt, time filter, search, and selection actions",
-    });
 
     const controlsPanel = optionsSection.createDiv({ cls: "vault-ai-summarizer-controls-panel" });
 
@@ -2084,9 +2080,6 @@ class VaultFileSelectionModal extends Modal {
     const dateCardHeader = dateCard.createDiv({ cls: "vault-ai-summarizer-filter-card-header" });
     dateCardHeader.createSpan({ text: "Time filter" });
     const dateHeaderRight = dateCardHeader.createDiv({ cls: "vault-ai-summarizer-filter-card-header-right" });
-    dateHeaderRight.createEl("small", {
-      text: "Filter by created/modified time.",
-    });
     const toggleLabel = dateHeaderRight.createEl("label", { cls: "vault-ai-summarizer-filter-toggle" });
     const toggleInput = toggleLabel.createEl("input", { type: "checkbox" });
     toggleInput.checked = this.relativeDateFilterEnabled;
@@ -2094,21 +2087,16 @@ class VaultFileSelectionModal extends Modal {
 
     const dateControls = dateCard.createDiv({ cls: "vault-ai-summarizer-filter-controls" });
 
-    // Mode selector: relative vs date range
-    const modeRow = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-mode-row" });
-    const relLabel = modeRow.createEl("label", { cls: "vault-ai-summarizer-filter-mode-label" });
-    const relRadio = relLabel.createEl("input", { type: "radio" });
-    relRadio.name = "dateFilterMode";
-    relRadio.value = "relative";
-    relRadio.checked = this.dateFilterMode === "relative";
-    relLabel.createSpan({ text: "Within last…" });
-
-    const absLabel = modeRow.createEl("label", { cls: "vault-ai-summarizer-filter-mode-label" });
-    const absRadio = absLabel.createEl("input", { type: "radio" });
-    absRadio.name = "dateFilterMode";
-    absRadio.value = "range";
-    absRadio.checked = this.dateFilterMode === "range";
-    absLabel.createSpan({ text: "Date range" });
+    // Mode selector: segmented toggle
+    const modeToggle = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-mode-toggle" });
+    const relBtn = modeToggle.createEl("button", {
+      text: "Within last…",
+      cls: ["vault-ai-summarizer-filter-mode-btn", this.dateFilterMode === "relative" ? "is-active" : ""].join(" ").trim(),
+    });
+    const rangeBtn = modeToggle.createEl("button", {
+      text: "Date range",
+      cls: ["vault-ai-summarizer-filter-mode-btn", this.dateFilterMode === "range" ? "is-active" : ""].join(" ").trim(),
+    });
 
     // Relative controls
     const relativeControlsDiv = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-relative-controls" });
@@ -2174,15 +2162,16 @@ class VaultFileSelectionModal extends Modal {
       this.renderFileTree();
     };
 
-    const fromRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
-    fromRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "From" });
-    const fromPicker = fromRow.createEl("input", { type: "date" });
+    const rangePickerRow = absoluteControlsDiv.createDiv({
+      cls: "vault-ai-summarizer-filter-main-row vault-ai-summarizer-filter-range-row",
+    });
+    rangePickerRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "From" });
+    const fromPicker = rangePickerRow.createEl("input", { type: "date" });
     fromPicker.value = this.rangeStartDate;
     fromPicker.oninput = () => { this.rangeStartDate = fromPicker.value; this.renderFileTree(); };
 
-    const toRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
-    toRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "To" });
-    const toPicker = toRow.createEl("input", { type: "date" });
+    rangePickerRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "To" });
+    const toPicker = rangePickerRow.createEl("input", { type: "date" });
     toPicker.value = this.rangeEndDate;
     toPicker.oninput = () => { this.rangeEndDate = toPicker.value; this.renderFileTree(); };
 
@@ -2191,8 +2180,17 @@ class VaultFileSelectionModal extends Modal {
       absoluteControlsDiv.style.display = this.dateFilterMode === "range" ? "" : "none";
     };
 
-    relRadio.onchange = absRadio.onchange = () => {
-      this.dateFilterMode = relRadio.checked ? "relative" : "range";
+    relBtn.onclick = () => {
+      this.dateFilterMode = "relative";
+      relBtn.classList.add("is-active");
+      rangeBtn.classList.remove("is-active");
+      syncDateModeUi();
+      this.renderFileTree();
+    };
+    rangeBtn.onclick = () => {
+      this.dateFilterMode = "range";
+      rangeBtn.classList.add("is-active");
+      relBtn.classList.remove("is-active");
       syncDateModeUi();
       this.renderFileTree();
     };
@@ -2207,8 +2205,8 @@ class VaultFileSelectionModal extends Modal {
       rangeFieldSelect.disabled = !isEnabled;
       fromPicker.disabled = !isEnabled;
       toPicker.disabled = !isEnabled;
-      relRadio.disabled = !isEnabled;
-      absRadio.disabled = !isEnabled;
+      relBtn.disabled = !isEnabled;
+      rangeBtn.disabled = !isEnabled;
       dateControls.classList.toggle("is-disabled", !isEnabled);
     };
 
@@ -2241,8 +2239,9 @@ class VaultFileSelectionModal extends Modal {
       cls: "vault-ai-summarizer-action-primary",
       text: "Select all visible files",
     });
-    const expandAllBtn = actionRow.createEl("button", { text: "Expand folders" });
-    const collapseAllBtn = actionRow.createEl("button", { text: "Collapse folders" });
+    const foldBtns = actionRow.createDiv({ cls: "vault-ai-summarizer-fold-btns" });
+    const expandAllBtn = foldBtns.createEl("button", { text: "Expand folders" });
+    const collapseAllBtn = foldBtns.createEl("button", { text: "Collapse folders" });
     const clearAllBtn = actionRow.createEl("button", { text: "Clear all" });
 
     selectVisibleBtn.onclick = () => {
