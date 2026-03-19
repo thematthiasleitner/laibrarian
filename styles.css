@@ -684,6 +684,7 @@
 .vault-ai-summarizer-filter-mode-toggle {
   display: flex;
   flex: 1;
+  min-width: fit-content;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   overflow: hidden;
