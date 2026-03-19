@@ -22,6 +22,7 @@
     "useDefineForClassFields": false,
     "moduleDetection": "force",
     "allowImportingTsExtensions": true,
+    "noEmit": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "esModuleInterop": true,
