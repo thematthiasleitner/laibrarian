@@ -28542,7 +28542,7 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
       text: "Date range",
       cls: ["vault-ai-summarizer-filter-mode-btn", this.dateFilterMode === "range" ? "is-active" : ""].join(" ").trim()
     });
-    const sharedFieldSelect = dateControls.createEl("select", {
+    const sharedFieldSelect = modeRow.createEl("select", {
       cls: "vault-ai-summarizer-filter-select vault-ai-summarizer-filter-select-field"
     });
     DATE_FIELD_FILTER_OPTIONS.forEach((option) => {

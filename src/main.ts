@@ -2101,8 +2101,8 @@ class VaultFileSelectionModal extends Modal {
       cls: ["vault-ai-summarizer-filter-mode-btn", this.dateFilterMode === "range" ? "is-active" : ""].join(" ").trim(),
     });
 
-    // Shared field selector on its own row
-    const sharedFieldSelect = dateControls.createEl("select", {
+    // Shared field selector — same row as mode toggle, wraps below when narrow
+    const sharedFieldSelect = modeRow.createEl("select", {
       cls: "vault-ai-summarizer-filter-select vault-ai-summarizer-filter-select-field",
     });
     DATE_FIELD_FILTER_OPTIONS.forEach((option) => {

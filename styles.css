@@ -678,13 +678,21 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .vault-ai-summarizer-filter-mode-toggle {
   display: flex;
+  flex: 1 1 auto;       /* basis=auto so flex knows natural width before wrapping */
+  min-width: fit-content; /* never clip button text */
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   overflow: hidden;
+}
+
+/* Field select: won't shrink (wraps instead), grows to fill row when alone */
+.vault-ai-summarizer-filter-mode-row > .vault-ai-summarizer-filter-select {
+  flex: 1 0 auto;
 }
 
 .vault-ai-summarizer-filter-mode-btn {
