@@ -28488,9 +28488,10 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
       text: "Options & filters"
     });
     const controlsPanel = optionsSection.createDiv({ cls: "vault-ai-summarizer-controls-panel" });
-    const presetRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row vault-ai-summarizer-preset-row" });
-    presetRow.createSpan({ text: "Prompt preset" });
-    const presetSelect = presetRow.createEl("select");
+    const presetRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row" });
+    const presetWrap = presetRow.createDiv({ cls: "vault-ai-summarizer-prefixed-select" });
+    presetWrap.createSpan({ cls: "vault-ai-summarizer-select-prefix", text: "Prompt" });
+    const presetSelect = presetWrap.createEl("select");
     this.presets.forEach((preset) => {
       const option = presetSelect.createEl("option", { text: preset.name, value: preset.id });
       option.selected = preset.id === this.selectedPresetId;
@@ -28498,10 +28499,11 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
     presetSelect.onchange = () => {
       this.selectedPresetId = presetSelect.value;
     };
-    const tempRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row vault-ai-summarizer-temp-row" });
-    tempRow.createSpan({ text: "Creativity" });
+    const tempRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row" });
     const tempWrap = tempRow.createDiv({ cls: "vault-ai-summarizer-temp-wrap" });
-    const tempSelect = tempWrap.createEl("select", { cls: "vault-ai-summarizer-temp-select" });
+    const tempPrefixed = tempWrap.createDiv({ cls: "vault-ai-summarizer-prefixed-select" });
+    tempPrefixed.createSpan({ cls: "vault-ai-summarizer-select-prefix", text: "Creativity" });
+    const tempSelect = tempPrefixed.createEl("select", { cls: "vault-ai-summarizer-temp-select" });
     TEMPERATURE_PRESETS.forEach(({ value, label }) => {
       tempSelect.createEl("option", { text: label, value: String(value) });
     });
@@ -28530,7 +28532,8 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
     toggleInput.checked = this.relativeDateFilterEnabled;
     toggleLabel.createSpan({ text: "Enable" });
     const dateControls = dateCard.createDiv({ cls: "vault-ai-summarizer-filter-controls" });
-    const modeToggle = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-mode-toggle" });
+    const modeRow = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-mode-row" });
+    const modeToggle = modeRow.createDiv({ cls: "vault-ai-summarizer-filter-mode-toggle" });
     const relBtn = modeToggle.createEl("button", {
       text: "Within last\u2026",
       cls: ["vault-ai-summarizer-filter-mode-btn", this.dateFilterMode === "relative" ? "is-active" : ""].join(" ").trim()
@@ -28539,20 +28542,19 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
       text: "Date range",
       cls: ["vault-ai-summarizer-filter-mode-btn", this.dateFilterMode === "range" ? "is-active" : ""].join(" ").trim()
     });
-    const relativeControlsDiv = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-relative-controls" });
-    const dateMainRow = relativeControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
-    const fieldSelect = dateMainRow.createEl("select", {
+    const sharedFieldSelect = modeRow.createEl("select", {
       cls: "vault-ai-summarizer-filter-select vault-ai-summarizer-filter-select-field"
     });
     DATE_FIELD_FILTER_OPTIONS.forEach((option) => {
-      const el = fieldSelect.createEl("option", { text: option.label, value: option.id });
+      const el = sharedFieldSelect.createEl("option", { text: option.label, value: option.id });
       el.selected = option.id === this.dateFieldFilter;
     });
-    fieldSelect.onchange = () => {
-      this.dateFieldFilter = fieldSelect.value;
+    sharedFieldSelect.onchange = () => {
+      this.dateFieldFilter = sharedFieldSelect.value;
       this.renderFileTree();
     };
-    const amountUnitRow = dateMainRow.createDiv({ cls: "vault-ai-summarizer-filter-amount-unit" });
+    const relativeControlsDiv = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-relative-controls" });
+    const amountUnitRow = relativeControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-amount-unit" });
     amountUnitRow.createSpan({
       cls: "vault-ai-summarizer-filter-inline-label",
       text: "within last"
@@ -28581,18 +28583,6 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
       this.renderFileTree();
     };
     const absoluteControlsDiv = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-absolute-controls" });
-    const rangeFieldRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
-    const rangeFieldSelect = rangeFieldRow.createEl("select", {
-      cls: "vault-ai-summarizer-filter-select vault-ai-summarizer-filter-select-field"
-    });
-    DATE_FIELD_FILTER_OPTIONS.forEach((option) => {
-      const el = rangeFieldSelect.createEl("option", { text: option.label, value: option.id });
-      el.selected = option.id === this.dateFieldFilter;
-    });
-    rangeFieldSelect.onchange = () => {
-      this.dateFieldFilter = rangeFieldSelect.value;
-      this.renderFileTree();
-    };
     const rangePickerRow = absoluteControlsDiv.createDiv({
       cls: "vault-ai-summarizer-filter-main-row vault-ai-summarizer-filter-range-row"
     });
@@ -28631,10 +28621,9 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
     syncDateModeUi();
     const syncTimeFilterUi = () => {
       const isEnabled = this.relativeDateFilterEnabled;
-      fieldSelect.disabled = !isEnabled;
+      sharedFieldSelect.disabled = !isEnabled;
       amountInput.disabled = !isEnabled;
       unitSelect.disabled = !isEnabled;
-      rangeFieldSelect.disabled = !isEnabled;
       fromPicker.disabled = !isEnabled;
       toPicker.disabled = !isEnabled;
       relBtn.disabled = !isEnabled;
@@ -28651,12 +28640,11 @@ var VaultFileSelectionModal = class extends import_obsidian.Modal {
       this.renderFileTree();
     };
     syncTimeFilterUi();
-    const searchRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row vault-ai-summarizer-search-row" });
-    searchRow.createSpan({ text: "Search" });
+    const searchRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row" });
     const searchInput = searchRow.createEl("input", {
       cls: "vault-ai-summarizer-search-input",
       type: "search",
-      placeholder: "Filter by file name or path"
+      placeholder: "Search by file name or path"
     });
     searchInput.oninput = () => {
       this.searchTerm = searchInput.value.trim();

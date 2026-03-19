@@ -97,27 +97,35 @@
   flex-wrap: wrap;
 }
 
-.vault-ai-summarizer-preset-row,
-.vault-ai-summarizer-search-row,
-.vault-ai-summarizer-temp-row {
-  display: grid;
-  grid-template-columns: 5.6rem minmax(0, 1fr);
-  align-items: start;
-  gap: 0.55rem;
+.vault-ai-summarizer-prefixed-select {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 6px);
+  overflow: hidden;
+  background: var(--background-primary);
+  width: 100%;
 }
 
-.vault-ai-summarizer-preset-row > span,
-.vault-ai-summarizer-search-row > span,
-.vault-ai-summarizer-temp-row > span {
+.vault-ai-summarizer-select-prefix {
+  padding: 0 0.6rem;
+  display: flex;
+  align-items: center;
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
-  min-width: 0;
-  padding-top: 0.2rem;
+  white-space: nowrap;
+  background: var(--background-secondary);
+  border-right: 1px solid var(--background-modifier-border);
+  flex: 0 0 auto;
 }
 
-.vault-ai-summarizer-preset-row > select {
-  width: 100%;
+.vault-ai-summarizer-prefixed-select select {
+  flex: 1;
   min-width: 0;
+  border: none;
+  background: transparent;
+  padding-left: 0.4rem;
+  box-shadow: none;
 }
 
 .vault-ai-summarizer-search-input {
@@ -554,17 +562,6 @@
     overscroll-behavior: contain;
   }
 
-  .vault-ai-summarizer-search-input {
-    min-width: 10.5rem;
-  }
-
-  .vault-ai-summarizer-preset-row,
-  .vault-ai-summarizer-search-row,
-  .vault-ai-summarizer-temp-row {
-    grid-template-columns: 4.8rem minmax(0, 1fr);
-    gap: 0.45rem;
-  }
-
   .vault-ai-summarizer-filter-main-row {
     gap: 0.35rem;
   }
@@ -667,11 +664,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  flex: 1;
-}
-
-.vault-ai-summarizer-temp-select {
-  background: var(--background-primary);
   width: 100%;
 }
 
@@ -682,15 +674,23 @@
 }
 
 /* Segmented mode toggle (Within last / Date range) */
+.vault-ai-summarizer-filter-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .vault-ai-summarizer-filter-mode-toggle {
-  display: inline-flex;
+  display: flex;
+  flex: 1;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   overflow: hidden;
-  align-self: flex-start;
 }
 
 .vault-ai-summarizer-filter-mode-btn {
+  flex: 1;
+  text-align: center;
   padding: 0.2rem 0.75rem;
   border: none;
   border-radius: 0;
