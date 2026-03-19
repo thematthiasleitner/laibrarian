@@ -235,6 +235,14 @@ const OPENAI_BASE_URL = "https://api.openai.com/v1";
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
 const ANTHROPIC_API_VERSION = "2023-06-01";
 const GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
+const TEMPERATURE_PRESETS: ReadonlyArray<{ value: number; label: string; description: string }> = [
+  { value: 0.0, label: "Precise",     description: "Deterministic — identical output on every run. Best for structured extraction." },
+  { value: 0.2, label: "Focused",     description: "Very consistent, minimal variation. Good default for factual summaries." },
+  { value: 0.5, label: "Balanced",    description: "Natural variation in phrasing while staying on topic." },
+  { value: 0.8, label: "Creative",    description: "Noticeably varied, more expressive wording. Useful for essay-style outputs." },
+  { value: 1.2, label: "Wild",        description: "High unpredictability. Experimental — outputs may diverge from the source." },
+];
+
 const DATE_FIELD_FILTER_OPTIONS: Array<{ id: DateFieldFilter; label: string }> = [
   { id: "created", label: "Date created" },
   { id: "modified", label: "Date modified" },
@@ -254,7 +262,7 @@ const OUTPUT_FILENAME_BLOCK_OPTIONS: Array<{
   { id: "prompt_choice", label: "Prompt choice", description: "Add the selected prompt identifier." },
   { id: "time_created", label: "Time of creation", description: "Add the output creation time." },
   { id: "time_filter", label: "Time filter", description: "Add the active time-filter window, if set." },
-  { id: "search_string", label: "Search string", description: "Add the active search query, if set." },
+  { id: "search_string", label: "Search filter text", description: "The text typed into the Search box in the file picker — only included when you filtered by filename before generating." },
 ];
 const OUTPUT_FILENAME_DEFAULT_ORDER: OutputFilenameBlock[] = [
   "date_created",
@@ -1978,8 +1986,9 @@ class VaultFileSelectionModal extends Modal {
   private dateFieldFilter: DateFieldFilter = "created";
   private relativeDateAmountInput = "";
   private relativeDateUnit: RelativeDateUnit = "day";
-  private dateFilterMode: "relative" | "absolute" = "relative";
-  private absoluteStartDate = "";
+  private dateFilterMode: "relative" | "range" = "relative";
+  private rangeStartDate = "";
+  private rangeEndDate = "";
   private temperatureOverride: number | null = null;
   private readonly defaultTemperature: number;
   private countEl: HTMLElement | null = null;
@@ -2049,15 +2058,26 @@ class VaultFileSelectionModal extends Modal {
     };
 
     const tempRow = controlsPanel.createDiv({ cls: "vault-ai-summarizer-row vault-ai-summarizer-temp-row" });
-    tempRow.createSpan({ text: "Temperature" });
-    const tempInput = tempRow.createEl("input", { type: "number" });
-    tempInput.min = "0";
-    tempInput.max = "2";
-    tempInput.step = "0.1";
-    tempInput.value = String(this.defaultTemperature);
-    tempInput.oninput = () => {
-      const v = parseFloat(tempInput.value);
-      this.temperatureOverride = isNaN(v) ? null : Math.min(2, Math.max(0, v));
+    tempRow.createSpan({ text: "Creativity" });
+    const tempWrap = tempRow.createDiv({ cls: "vault-ai-summarizer-temp-wrap" });
+    const tempSelect = tempWrap.createEl("select", { cls: "vault-ai-summarizer-temp-select" });
+    TEMPERATURE_PRESETS.forEach(({ value, label }) => {
+      tempSelect.createEl("option", { text: label, value: String(value) });
+    });
+    const closestPreset = TEMPERATURE_PRESETS.reduce((best, p) =>
+      Math.abs(p.value - this.defaultTemperature) < Math.abs(best.value - this.defaultTemperature) ? p : best,
+    );
+    this.temperatureOverride = closestPreset.value;
+    tempSelect.value = String(closestPreset.value);
+    const tempDesc = tempWrap.createEl("small", {
+      cls: "vault-ai-summarizer-temp-desc",
+      text: closestPreset.description,
+    });
+    tempSelect.onchange = () => {
+      const v = parseFloat(tempSelect.value);
+      this.temperatureOverride = isNaN(v) ? null : v;
+      const preset = TEMPERATURE_PRESETS.find((p) => p.value === v);
+      tempDesc.setText(preset?.description ?? "");
     };
 
     const dateCard = controlsPanel.createDiv({ cls: "vault-ai-summarizer-filter-card" });
@@ -2074,7 +2094,7 @@ class VaultFileSelectionModal extends Modal {
 
     const dateControls = dateCard.createDiv({ cls: "vault-ai-summarizer-filter-controls" });
 
-    // Mode selector: relative vs absolute date
+    // Mode selector: relative vs date range
     const modeRow = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-mode-row" });
     const relLabel = modeRow.createEl("label", { cls: "vault-ai-summarizer-filter-mode-label" });
     const relRadio = relLabel.createEl("input", { type: "radio" });
@@ -2086,9 +2106,9 @@ class VaultFileSelectionModal extends Modal {
     const absLabel = modeRow.createEl("label", { cls: "vault-ai-summarizer-filter-mode-label" });
     const absRadio = absLabel.createEl("input", { type: "radio" });
     absRadio.name = "dateFilterMode";
-    absRadio.value = "absolute";
-    absRadio.checked = this.dateFilterMode === "absolute";
-    absLabel.createSpan({ text: "Since date" });
+    absRadio.value = "range";
+    absRadio.checked = this.dateFilterMode === "range";
+    absLabel.createSpan({ text: "Date range" });
 
     // Relative controls
     const relativeControlsDiv = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-relative-controls" });
@@ -2138,38 +2158,41 @@ class VaultFileSelectionModal extends Modal {
       this.renderFileTree();
     };
 
-    // Absolute date controls
+    // Date range controls
     const absoluteControlsDiv = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-absolute-controls" });
-    const absDateRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
 
-    const absFieldSelect = absDateRow.createEl("select", {
+    const rangeFieldRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
+    const rangeFieldSelect = rangeFieldRow.createEl("select", {
       cls: "vault-ai-summarizer-filter-select vault-ai-summarizer-filter-select-field",
     });
     DATE_FIELD_FILTER_OPTIONS.forEach((option) => {
-      const el = absFieldSelect.createEl("option", { text: option.label, value: option.id });
+      const el = rangeFieldSelect.createEl("option", { text: option.label, value: option.id });
       el.selected = option.id === this.dateFieldFilter;
     });
-    absFieldSelect.onchange = () => {
-      this.dateFieldFilter = absFieldSelect.value as DateFieldFilter;
+    rangeFieldSelect.onchange = () => {
+      this.dateFieldFilter = rangeFieldSelect.value as DateFieldFilter;
       this.renderFileTree();
     };
 
-    absDateRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "since" });
+    const fromRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
+    fromRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "From" });
+    const fromPicker = fromRow.createEl("input", { type: "date" });
+    fromPicker.value = this.rangeStartDate;
+    fromPicker.oninput = () => { this.rangeStartDate = fromPicker.value; this.renderFileTree(); };
 
-    const datePicker = absDateRow.createEl("input", { type: "date" });
-    datePicker.value = this.absoluteStartDate;
-    datePicker.oninput = () => {
-      this.absoluteStartDate = datePicker.value;
-      this.renderFileTree();
-    };
+    const toRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
+    toRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "To" });
+    const toPicker = toRow.createEl("input", { type: "date" });
+    toPicker.value = this.rangeEndDate;
+    toPicker.oninput = () => { this.rangeEndDate = toPicker.value; this.renderFileTree(); };
 
     const syncDateModeUi = (): void => {
       relativeControlsDiv.style.display = this.dateFilterMode === "relative" ? "" : "none";
-      absoluteControlsDiv.style.display = this.dateFilterMode === "absolute" ? "" : "none";
+      absoluteControlsDiv.style.display = this.dateFilterMode === "range" ? "" : "none";
     };
 
     relRadio.onchange = absRadio.onchange = () => {
-      this.dateFilterMode = relRadio.checked ? "relative" : "absolute";
+      this.dateFilterMode = relRadio.checked ? "relative" : "range";
       syncDateModeUi();
       this.renderFileTree();
     };
@@ -2181,8 +2204,9 @@ class VaultFileSelectionModal extends Modal {
       fieldSelect.disabled = !isEnabled;
       amountInput.disabled = !isEnabled;
       unitSelect.disabled = !isEnabled;
-      absFieldSelect.disabled = !isEnabled;
-      datePicker.disabled = !isEnabled;
+      rangeFieldSelect.disabled = !isEnabled;
+      fromPicker.disabled = !isEnabled;
+      toPicker.disabled = !isEnabled;
       relRadio.disabled = !isEnabled;
       absRadio.disabled = !isEnabled;
       dateControls.classList.toggle("is-disabled", !isEnabled);
@@ -2514,12 +2538,18 @@ class VaultFileSelectionModal extends Modal {
   private matchesRelativeDateFilter(file: TFile): boolean {
     if (!this.relativeDateFilterEnabled) return true;
 
-    if (this.dateFilterMode === "absolute") {
-      if (!this.absoluteStartDate) return true;
-      const threshold = new Date(this.absoluteStartDate).getTime();
-      if (!Number.isFinite(threshold)) return true;
+    if (this.dateFilterMode === "range") {
+      if (!this.rangeStartDate && !this.rangeEndDate) return true;
       const ts = this.dateFieldFilter === "created" ? (file.stat?.ctime ?? 0) : (file.stat?.mtime ?? 0);
-      return ts >= threshold;
+      if (this.rangeStartDate) {
+        const from = new Date(this.rangeStartDate).getTime();
+        if (Number.isFinite(from) && ts < from) return false;
+      }
+      if (this.rangeEndDate) {
+        const to = new Date(this.rangeEndDate).getTime() + 86399999;
+        if (Number.isFinite(to) && ts > to) return false;
+      }
+      return true;
     }
 
     const filter = this.getRelativeDateFilter();
@@ -2562,10 +2592,13 @@ class VaultFileSelectionModal extends Modal {
   private describeRelativeDateFilter(): string {
     if (!this.relativeDateFilterEnabled) return "off";
 
-    if (this.dateFilterMode === "absolute") {
-      if (!this.absoluteStartDate) return "off";
+    if (this.dateFilterMode === "range") {
+      const parts: string[] = [];
+      if (this.rangeStartDate) parts.push(`from ${this.rangeStartDate}`);
+      if (this.rangeEndDate) parts.push(`to ${this.rangeEndDate}`);
+      if (!parts.length) return "off";
       const fieldLabel = this.dateFieldFilter === "created" ? "created" : "modified";
-      return `${fieldLabel} since ${this.absoluteStartDate}`;
+      return `${fieldLabel} ${parts.join(" ")}`;
     }
 
     const filter = this.getRelativeDateFilter();
@@ -2721,6 +2754,7 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
   plugin: VaultAiSummarizerPlugin;
   private modelRefreshers: Partial<Record<DynamicModelProvider, () => Promise<void>>> = {};
   private modelRefreshTimers: Partial<Record<DynamicModelProvider, number>> = {};
+  private activeTab: "general" | "naming" | "provider" | "presets" = "general";
 
   constructor(app: App, plugin: VaultAiSummarizerPlugin) {
     super(app, plugin);
@@ -2734,8 +2768,31 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    this.section("General", "Settings shared across all providers.");
+    const tabBar = containerEl.createDiv({ cls: "vault-ai-summarizer-tabs" });
+    const tabs = [
+      { id: "general" as const, label: "General" },
+      { id: "naming" as const, label: "Naming" },
+      { id: "provider" as const, label: "Provider" },
+      { id: "presets" as const, label: "Presets" },
+    ];
+    tabs.forEach(({ id, label }) => {
+      const btn = tabBar.createEl("button", {
+        text: label,
+        cls: ["vault-ai-summarizer-tab-btn", id === this.activeTab ? "is-active" : ""].join(" ").trim(),
+      });
+      btn.onclick = () => { this.activeTab = id; this.display(); };
+    });
 
+    const tabContent = containerEl.createDiv({ cls: "vault-ai-summarizer-tab-content" });
+    switch (this.activeTab) {
+      case "general":  this.renderGeneralTab(tabContent); break;
+      case "naming":   this.renderNamingTab(tabContent); break;
+      case "provider": this.renderProviderTab(tabContent); break;
+      case "presets":  this.renderPresetsTab(tabContent); break;
+    }
+  }
+
+  private renderGeneralTab(containerEl: HTMLElement): void {
     new Setting(containerEl)
       .setName("Output folder for vault summaries")
       .setDesc("Folder where multi-file outputs are written.")
@@ -2764,8 +2821,9 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+  }
 
-    this.section("Output file naming", "Control how vault-summary output filenames are composed.");
+  private renderNamingTab(containerEl: HTMLElement): void {
     this.renderOutputFilenameBuilder(containerEl);
 
     new Setting(containerEl)
@@ -2783,9 +2841,9 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+  }
 
-    this.section("Model provider", "Configure one provider at a time.");
-
+  private renderProviderTab(containerEl: HTMLElement): void {
     new Setting(containerEl)
       .setName("Provider")
       .setDesc("Select the provider used for summary generation.")
@@ -2836,9 +2894,9 @@ class VaultAiSummarizerSettingTab extends PluginSettingTab {
         this.displayOpenAiCompatibleSettings(containerEl);
         break;
     }
+  }
 
-    this.section("Prompt presets", "Edit the assistant instructions used by each preset.");
-
+  private renderPresetsTab(containerEl: HTMLElement): void {
     new Setting(containerEl)
       .setName("Add prompt preset")
       .setDesc("Create a new custom prompt preset.")

@@ -197,6 +197,7 @@
   gap: 0.45rem;
   align-items: stretch;
   justify-content: center;
+  flex-wrap: wrap;
 }
 
 .vault-ai-summarizer-action-row button {
@@ -575,11 +576,13 @@
 
   .vault-ai-summarizer-action-row {
     gap: 0.4rem;
-    justify-content: center;
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .vault-ai-summarizer-action-primary {
+  .vault-ai-summarizer-action-row button {
     width: 100%;
+    text-align: center;
   }
 
   .vault-ai-summarizer-files {
@@ -620,4 +623,49 @@
   .vault-ai-summarizer-filter-select-field {
     flex-basis: 100%;
   }
+}
+
+/* Settings tabs */
+.vault-ai-summarizer-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.vault-ai-summarizer-tab-btn {
+  padding: 0.3rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+}
+
+.vault-ai-summarizer-tab-btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* Temperature dropdown */
+.vault-ai-summarizer-temp-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+}
+
+.vault-ai-summarizer-temp-select {
+  background: var(--background-primary);
+  width: 100%;
+}
+
+.vault-ai-summarizer-temp-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.35;
 }
