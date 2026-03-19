@@ -2089,7 +2089,7 @@ class VaultFileSelectionModal extends Modal {
 
     const dateControls = dateCard.createDiv({ cls: "vault-ai-summarizer-filter-controls" });
 
-    // Mode selector + shared field selector on same row
+    // Mode selector
     const modeRow = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-mode-row" });
     const modeToggle = modeRow.createDiv({ cls: "vault-ai-summarizer-filter-mode-toggle" });
     const relBtn = modeToggle.createEl("button", {
@@ -2100,7 +2100,9 @@ class VaultFileSelectionModal extends Modal {
       text: "Date range",
       cls: ["vault-ai-summarizer-filter-mode-btn", this.dateFilterMode === "range" ? "is-active" : ""].join(" ").trim(),
     });
-    const sharedFieldSelect = modeRow.createEl("select", {
+
+    // Shared field selector on its own row
+    const sharedFieldSelect = dateControls.createEl("select", {
       cls: "vault-ai-summarizer-filter-select vault-ai-summarizer-filter-select-field",
     });
     DATE_FIELD_FILTER_OPTIONS.forEach((option) => {
@@ -2149,16 +2151,15 @@ class VaultFileSelectionModal extends Modal {
     // Date range controls
     const absoluteControlsDiv = dateControls.createDiv({ cls: "vault-ai-summarizer-filter-absolute-controls" });
 
-    const rangePickerRow = absoluteControlsDiv.createDiv({
-      cls: "vault-ai-summarizer-filter-main-row vault-ai-summarizer-filter-range-row",
-    });
-    rangePickerRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "From" });
-    const fromPicker = rangePickerRow.createEl("input", { type: "date" });
+    const fromRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
+    fromRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "From" });
+    const fromPicker = fromRow.createEl("input", { type: "date", cls: "vault-ai-summarizer-filter-date-input" });
     fromPicker.value = this.rangeStartDate;
     fromPicker.oninput = () => { this.rangeStartDate = fromPicker.value; this.renderFileTree(); };
 
-    rangePickerRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "To" });
-    const toPicker = rangePickerRow.createEl("input", { type: "date" });
+    const toRow = absoluteControlsDiv.createDiv({ cls: "vault-ai-summarizer-filter-main-row" });
+    toRow.createSpan({ cls: "vault-ai-summarizer-filter-inline-label", text: "To" });
+    const toPicker = toRow.createEl("input", { type: "date", cls: "vault-ai-summarizer-filter-date-input" });
     toPicker.value = this.rangeEndDate;
     toPicker.oninput = () => { this.rangeEndDate = toPicker.value; this.renderFileTree(); };
 

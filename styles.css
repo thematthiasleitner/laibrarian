@@ -678,13 +678,10 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
 }
 
 .vault-ai-summarizer-filter-mode-toggle {
   display: flex;
-  flex: 1;
-  min-width: fit-content;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   overflow: hidden;
@@ -716,12 +713,8 @@
   pointer-events: none;
 }
 
-/* From / To pickers on the same row */
-.vault-ai-summarizer-filter-range-row {
-  flex-wrap: wrap;
-}
-
-.vault-ai-summarizer-filter-range-row input[type="date"] {
+/* Date pickers fill available width in their row */
+.vault-ai-summarizer-filter-date-input {
   flex: 1;
   min-width: 7rem;
 }
